@@ -1,0 +1,20 @@
+# 선택 가능한 무료 데모 배포 구성입니다. 계정 연결 후 적용합니다.
+# 운영 DB/수집/알림은 미연결이며, 자동 배포는 비활성화합니다.
+services:
+  - type: web
+    name: benefit-alert-api
+    runtime: docker
+    plan: free
+    region: singapore
+    branch: main
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /api/health
+    autoDeployTrigger: off
+    envVars:
+      - key: SPRING_PROFILES_ACTIVE
+        value: demo
+      - key: JAVA_TOOL_OPTIONS
+        value: -XX:MaxRAMPercentage=65
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false

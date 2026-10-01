@@ -1,0 +1,6 @@
+# 예시 모드는 외부 DB 없이 실행하며 실제 정책과 구분합니다.
+spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+      - org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration

@@ -1,0 +1,30 @@
+# 로컬 운영 프로필 검증용입니다. 실제 서비스 비밀번호와 분리하세요.
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: benefit_alert
+      POSTGRES_USER: benefit
+      POSTGRES_PASSWORD: ${LOCAL_DB_PASSWORD:?Set LOCAL_DB_PASSWORD}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - benefit_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U benefit -d benefit_alert"]
+      interval: 5s
+      retries: 10
+  api:
+    build: ./backend
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      DB_URL: jdbc:postgresql://db:5432/benefit_alert
+      DB_USERNAME: benefit
+      DB_PASSWORD: ${LOCAL_DB_PASSWORD}
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+volumes:
+  benefit_data:
