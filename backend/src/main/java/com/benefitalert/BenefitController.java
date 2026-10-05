@@ -1,32 +1,33 @@
 package com.benefitalert;
-import java.time.LocalDate;
-import java.time.ZoneId;
+import com.benefitalert.account.SupabaseIdentity;
 import java.util.List;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.Profiles;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
-import org.springframework.http.HttpStatus;
-/** 전국 공고는 지역 선택 시 함께 포함하고, 기간 미정 공고는 제외하지 않습니다. */
+
 @RestController @RequestMapping("/api")
 public class BenefitController {
  private final BenefitRepository repository;
  private final Environment environment;
- public BenefitController(BenefitRepository repository,Environment environment) { this.repository=repository; this.environment=environment; }
- public record Result(List<Benefit> items,boolean demo) {}
+ private final SupabaseIdentity identity;
+ @Autowired public BenefitController(BenefitRepository repository,Environment environment,SupabaseIdentity identity) {this.repository=repository;this.environment=environment;this.identity=identity;}
+ BenefitController(BenefitRepository repository,Environment environment) {this(repository,environment,null);}
+ public record Result(List<Benefit> items,boolean demo,long total,int page,int size,long totalPages) {}
+ public Result list(String q,String region,String category,boolean openOnly) {return list(q,region,category,openOnly,1,12,"default",null,false,null);}
  @GetMapping("/benefits")
  public Result list(@RequestParam(defaultValue="") String q,@RequestParam(defaultValue="전체") String region,
-  @RequestParam(defaultValue="전체") String category,@RequestParam(defaultValue="false") boolean openOnly) {
-  String keyword=q.strip().toLowerCase(java.util.Locale.ROOT);
-  LocalDate today=LocalDate.now(ZoneId.of("Asia/Seoul"));
-  return new Result(repository.findAll().stream()
-   .filter(b->keyword.isEmpty()||(b.title()+" "+b.summary()).toLowerCase(java.util.Locale.ROOT).contains(keyword))
-   .filter(b->region.equals("전체")||b.region().equals("전국")||b.region().equals(region))
-   .filter(b->category.equals("전체")||b.category().equals(category))
-   .filter(b->!openOnly||b.deadline()==null||!b.deadline().isBefore(today)).toList(),environment.acceptsProfiles(Profiles.of("demo")));
+  @RequestParam(defaultValue="전체") String category,@RequestParam(defaultValue="false") boolean openOnly,
+  @RequestParam(defaultValue="1") int page,@RequestParam(defaultValue="12") int size,@RequestParam(defaultValue="default") String sort,
+  @RequestParam(required=false) List<String> ids,@RequestParam(defaultValue="false") boolean savedOnly,
+  @RequestHeader(value="Authorization",required=false) String token) {
+  if(savedOnly && !environment.acceptsProfiles(Profiles.of("prod"))) throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE);
+  var user=savedOnly?identity.requireUser(token):null;
+  var result=repository.search(new BenefitSearch(q,region,category,openOnly,page,size,sort,ids,user));
+  return new Result(result.items(),environment.acceptsProfiles(Profiles.of("demo")),result.total(),page,size,(result.total()+size-1)/size);
  }
- @GetMapping("/benefits/{id}") public Benefit detail(@PathVariable String id) {
-  return repository.findAll().stream().filter(b->b.id().equals(id)).findFirst().orElseThrow(()->new ResponseStatusException(HttpStatus.NOT_FOUND));
- }
- @GetMapping("/health") public java.util.Map<String,String> health() { return java.util.Map.of("status","UP"); }
+ @GetMapping("/benefits/{id}") public Benefit detail(@PathVariable String id) {return repository.findById(id).orElseThrow(()->new ResponseStatusException(HttpStatus.NOT_FOUND));}
+ @GetMapping("/health") public java.util.Map<String,String> health() {return java.util.Map.of("status","UP");}
 }

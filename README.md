@@ -1,20 +1,69 @@
 # benefit-alert · 혜택온
 
-React + Vite + TypeScript / Java 21 + Spring Boot / PostgreSQL 지원금 탐색 서비스.
+React 19 + Vite + TypeScript / Java 21 + Spring Boot / PostgreSQL 지원금 탐색 서비스.
 
-## 구현된 범위
+- 운영: https://benefit-alert.vercel.app
+- API: https://benefit-alert.onrender.com
+- 저장소: `enrjsj/benefit-alert`
+- Render: `srv-db1kt90u01pc73euhpsg`, Vercel: `1-4156/benefit-alert`
+- Supabase: `efmomntlstanyejcrjdl`, 전용 DB 스키마 `benefit_alert`
 
-- 지원금 목록, 키워드·지역·분야·마감 여부 필터, 상세 모달
-- 관심목록(현재 브라우저 localStorage), 반응형, 로딩·오류·빈 상태
-- Spring 조회 API, demo/prod 프로필 분리, Flyway PostgreSQL 스키마
-- Docker 로컬 구성 및 GitHub Actions 빌드·테스트(자동 배포 없음)
+## 제공 기능
 
-**현재 demo 데이터는 가상 공고입니다. 실제 정책 정보가 아니며 신청할 수 없습니다.**
-실제 정부 API 수집, 회원 인증, 맞춤 자격 매칭, 이메일·푸시 발송은 미구현입니다.
+- 서버 검색·지역·분야·마감 필터, 정렬, 페이지네이션, URL 검색 조건 유지
+- 상세 직접 링크와 공유, 한국 시간 기준 D-day, 로딩·오류·빈 상태
+- 비회원 관심목록(브라우저 최대 100개), 회원 관심목록(계정 최대 500개)
+- Supabase 이메일 가입·인증·로그인·비밀번호 재설정, 계정별 관심 지역·분야
+- 선택한 조건의 최근 7일 새 공고와 저장한 공고의 7일 이내 마감을 사이트 알림함에서 확인
+- 정부24 공공서비스 목록 수집, 원본 JSON 보관, 중복 갱신, 실행 기록
 
-## 로컬 실행
+맞춤 조건은 지역·분야 기반 탐색이며 지원 자격을 판정하지 않습니다. 알림은 방문 시 생성하는 사이트 알림함이며 이메일·푸시를 발송하지 않습니다. 비회원 저장 내용은 사용자가 가져오기를 누를 때 계정에 합쳐집니다.
 
-필수: Node.js 22, Java 21, Maven 3.9 이상. 두 터미널에서 각각 실행합니다.
+## 나중에 키를 연결하는 방법
+
+키 없이도 서버·검색·상세·브라우저 관심목록은 동작합니다. 회원 기능과 수집은 비활성화됩니다. 다음 값은 **해당 benefit-alert Render 서비스**의 Environment에 저장한 뒤 재배포합니다. 프런트 재빌드는 필요 없습니다.
+
+| 환경변수 | 값 |
+| --- | --- |
+| `SUPABASE_PUBLISHABLE_KEY` | 위 Supabase 프로젝트의 `sb_publishable_...` 키 또는 기존 공개 anon 키 |
+| `GOV24_API_KEY` | 공공데이터포털 정부24 공공서비스(혜택) API 활용 신청 후 승인된 인증키 |
+
+`SUPABASE_PUBLISHABLE_KEY`는 브라우저 인증을 위해 공개됩니다. **secret 또는 service_role 키를 넣지 않습니다.** 서버는 해당 형식의 키를 차단합니다. DB 비밀번호와 정부 API 키는 공개하지 않습니다.
+
+Supabase Authentication → URL Configuration에서 Site URL을 `https://benefit-alert.vercel.app`로, Redirect URLs에 `https://benefit-alert.vercel.app/`를 설정합니다. 이메일 가입/인증 기능을 활성화하고 서비스 규모에 맞게 인증 메일 발송 설정을 구성합니다. 비밀번호는 8자 이상을 사용합니다.
+
+백엔드는 Supabase `/auth/v1/user`에서 토큰과 이메일 인증 여부를 확인한 사용자 ID만 사용합니다. `member_profile`, `member_saved`, `member_notification`에는 RLS가 활성화되어 있으며 브라우저가 DB에 직접 접근하지 않습니다. 계정 API는 `Cache-Control: no-store`입니다.
+
+**실제 키를 넣은 후 해야 할 확인:** 정부 API 승인·응답 필드와 첫 수집 성공, 회원 인증 메일 도착·가입·로그인·비밀번호 재설정. 키 없이 실행하는 테스트는 실제 외부 서비스의 승인을 검증하지 않습니다.
+
+## 수집 정책
+
+[행정안전부 대한민국 공공서비스(혜택) 정보](https://www.data.go.kr/data/15113968/openapi.do)의 `/api/gov24/v3/serviceList`를 사용합니다. 키가 있으면 서버 시작 45초 후, 이후 실행 완료부터 6시간 간격으로 조회합니다. **Render가 중지/절전 상태면 실행되지 않습니다.** 정시 수집이 필요하면 항상 실행되는 서비스나 별도 스케줄러가 필요합니다.
+
+페이지당 100건, 최대 200페이지를 수집합니다. 다음 주기에 실패한 수집을 다시 시도합니다. 동시 실행은 DB 임대로 제한합니다. 중간 오류·빈 응답·중복 페이지·수집 상한·거부된 레코드가 있으면 기존 공고를 비활성화하지 않습니다. 온전한 0건 초과 스냅샷을 모두 받은 경우에만 이번 응답에 없는 정부24 공고를 비활성화합니다. 수동 공고는 유지합니다. 원본이 같으면 `updated_at`을 바꾸지 않습니다.
+
+기관명에 명확한 지역 정보가 없으면 `지역확인`으로 두며 중앙행정기관만 `전국`으로 분류합니다. 모호한 신청 기간은 원문을 보존하고 날짜를 추측하지 않습니다. 출처의 공식 안내를 반드시 확인해야 합니다.
+
+## 운영 DB 환경
+
+기존 `DB_PASSWORD`는 Render에 비밀 값으로 보관합니다.
+
+```text
+SPRING_PROFILES_ACTIVE=prod
+DB_URL=jdbc:postgresql://aws-0-ap-northeast-2.pooler.supabase.com:5432/postgres?sslmode=require
+DB_USERNAME=postgres.efmomntlstanyejcrjdl
+SPRING_FLYWAY_SCHEMAS=benefit_alert
+SPRING_FLYWAY_DEFAULT_SCHEMA=benefit_alert
+SPRING_DATASOURCE_HIKARI_SCHEMA=benefit_alert
+SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE=3
+SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE=1
+```
+
+Flyway V2는 공고 수집 메타데이터와 회원별 테이블을 추가합니다. prod에 예시 공고를 넣지 않습니다. 청약 프로젝트와 해당 프로젝트의 DB·배포 설정은 변경하지 않습니다.
+
+## 로컬 실행과 검증
+
+Node.js 22, Java 21, Maven 3.9 이상이 필요합니다.
 
 ```bash
 cd backend
@@ -25,62 +74,37 @@ mvn spring-boot:run
 cd frontend
 npm ci
 npm run dev
-```
-
-http://localhost:5173 에서 확인합니다. `/api` 요청은 Vite 개발 프록시가 8080으로 전달합니다.
-API 자체 점검: http://localhost:8080/api/health
-
-## PostgreSQL 모드
-
-```bash
-cp .env.example .env
-# .env의 LOCAL_DB_PASSWORD를 로컬 전용 값으로 변경
- docker compose up --build
-```
-
-prod는 예시 데이터를 넣지 않으므로 최초 조회 결과는 빈 목록입니다. 프런트는 위 명령으로 별도 실행합니다.
-Supabase 연결 시 DB_URL(JDBC URL 및 SSL 설정), DB_USERNAME, DB_PASSWORD를 실행 환경에 주입하고 SPRING_PROFILES_ACTIVE=prod를 지정합니다.
-비밀번호·API 키는 Git에 커밋하지 않습니다. 원격 운영 배포는 별도 요청 후 진행합니다.
-
-## API
-
-- `GET /api/benefits?q=&region=전체&category=전체&openOnly=false`: items, demo 반환
-- `GET /api/benefits/{id}`: 상세, 없으면 404
-- `GET /api/health`: 프로세스 생존 확인(DB 연결 상태를 의미하지 않음)
-
-지역 필터는 선택 지역과 전국을 포함합니다. 기간 미정 공고는 마감 제외 필터에서도 유지합니다.
-관심목록은 계정 동기화가 아니며 브라우저 저장소 삭제 시 사라집니다.
-현재 소규모 초기 구조는 전체 조회 후 필터링합니다. 실데이터 수집 전 SQL 검색·페이지네이션으로 전환해야 합니다.
-
-## 검증
-
-```bash
-cd frontend
 npm run build
 ```
+
+http://localhost:5173 → Vite 프록시 → http://localhost:8080. 기본 demo 프로필의 공고는 가상 예시이며 실제 신청할 수 없습니다. prod 로컬 실행은 `.env.example`과 `docker compose`를 참고합니다.
 
 ```bash
 cd backend
 mvn verify
 ```
 
-## 다음 단계
+실제 PostgreSQL 통합 테스트까지 실행하려면 임시 DB를 만듭니다. 아래 비밀번호는 로컬 테스트 전용이며 운영 비밀번호가 아닙니다. 테스트는 고유한 `test_...` 스키마를 생성한 뒤 삭제합니다.
 
-1. 공공데이터포털 행정안전부 공공서비스(혜택) 정보 API 활용 신청 및 실제 응답 검증
-2. 원본 보관, 지역·대상 정규화, 페이지별 수집, 중복 upsert, 실행 이력과 재시도
-3. DB 페이지네이션·검색 및 PostgreSQL 통합 테스트
-4. 회원·권한, 맞춤 조건과 판정 근거, 서버 관심목록
-5. 수신 동의·해제, 알림 outbox와 중복 방지·발송 재처리
-6. 운영 호스팅 결정, 공개 페이지 SEO, 접근성 및 브라우저 자동화 검증
+```bash
+docker run --rm --name benefit-test-db -e POSTGRES_PASSWORD=benefit-local-test -e POSTGRES_DB=benefit -p 127.0.0.1:55432:5432 -d postgres:17-alpine
+TEST_DATABASE_URL=jdbc:postgresql://127.0.0.1:55432/benefit mvn verify
+docker stop benefit-test-db
+```
 
-이메일 발송, 운영 배포 및 자동 배포 설정은 포함하지 않습니다.
+GitHub Actions도 PostgreSQL 통합 테스트를 실행합니다. 테스트 항목에는 사용자별 데이터 분리, 알림 중복 방지, 마감 검색·페이지네이션, 수집 성공/실패 시 공고 보존, 인증 토큰 검증과 비밀 키 노출 차단이 포함됩니다.
 
-## 공개 데모 배포
+## API
 
-1. Render 계정에서 루트 `render.yaml` Blueprint를 연결하거나 `backend/Dockerfile`로 웹 서비스를 만듭니다. 무료 플랜 예시이며 중지 후 첫 요청은 지연될 수 있습니다.
-2. Vercel에서 이 저장소를 가져오고 Root Directory를 `frontend`로 지정합니다.
-3. Vercel 환경변수 `VITE_API_BASE_URL`에 실제 Spring HTTPS 주소를 설정한 뒤 빌드합니다. 이 값은 공개 주소이며 비밀 키를 넣으면 안 됩니다.
-4. Spring 환경변수 `CORS_ALLOWED_ORIGINS`에 실제 Vercel Origin을 설정합니다(끝 슬래시 없이, 여러 개면 쉼표 구분).
-5. `/api/health`, 공고 조회, 브라우저 관심목록을 확인합니다. 현재 배포 대상은 demo 프로필입니다.
+- `GET /api/benefits?q=&region=전체&category=전체&openOnly=false&page=1&size=12&sort=default`: items, demo, total, page, size, totalPages
+- `sort`: default / deadline / title. 비회원 관심목록은 `ids=a,b`, 회원은 `savedOnly=true`와 Bearer 토큰 사용
+- `GET /api/benefits/{id}`: 공고 상세
+- `GET /api/client-config`: 공개 인증 설정(키 미설정이면 authEnabled=false)
+- `GET /api/data-status`: 수집 설정 여부와 마지막 실행 요약(prod)
+- `GET|PUT /api/account/profile`: region, category, notificationsEnabled
+- `GET|POST /api/account/saved`: POST body `{"ids":["공고 ID"]}`
+- `DELETE /api/account/saved/{id}`
+- `GET /api/account/notifications`, `PUT /api/account/notifications/{id}/read`
+- `GET /api/health`: 프로세스 생존 확인(DB 연결 보장은 아님)
 
-Render 자동 배포는 꺼두었습니다. Vercel Git 연결 시 자동 배포 설정은 프로젝트에서 따로 확인해야 합니다.
+회원 API는 prod에서만 제공하며 모든 요청에 Bearer 토큰이 필요합니다. Vercel의 `frontend/vercel.json`이 `/api`를 Render로 전달합니다. GitHub 푸시는 Vercel 배포를 시작합니다. Render Git 연결 상태에 따라 수동 배포가 필요할 수 있습니다.
