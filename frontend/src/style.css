@@ -2088,3 +2088,345 @@ button:disabled {
     font-size: 23px;
   }
 }
+
+.planning-intro {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid #dbe6d5;
+  background: #f2f6ed;
+  border-radius: 12px;
+  margin: 20px 0;
+}
+.planning-intro strong,
+.planning-intro small {
+  display: block;
+}
+.planning-intro strong {
+  font-size: 14px;
+  color: #345841;
+}
+.planning-intro small {
+  margin-top: 5px;
+  font-size: 12px;
+  color: #63735f;
+  line-height: 1.7;
+}
+.planning-intro button {
+  flex-shrink: 0;
+}
+.card-planning {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 18px;
+}
+.compare-toggle,
+.checklist-shortcut {
+  font: inherit;
+  font-size: 12px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.compare-toggle {
+  border: 1px solid #dbe5d5;
+  background: #f5f8f0;
+  color: #385b40;
+}
+.compare-toggle[aria-pressed="true"] {
+  color: white;
+  background: #28684d;
+  border-color: #28684d;
+}
+.checklist-shortcut {
+  border: 0;
+  background: transparent;
+  color: #50644c;
+}
+.checklist-shortcut:hover {
+  background: #f1f5ec;
+}
+.compare-dock {
+  position: fixed;
+  z-index: 25;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(680px, calc(100% - 32px));
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 16px 20px;
+  border: 1px solid #d0dfd0;
+  border-radius: 16px;
+  background: #fffffff5;
+  box-shadow: 0 8px 40px #16332326;
+  backdrop-filter: blur(12px);
+}
+.compare-dock > div {
+  flex: 1;
+}
+.compare-dock strong {
+  display: block;
+  font-size: 14px;
+}
+.compare-dock strong span {
+  color: #2b7651;
+  margin-left: 8px;
+}
+.compare-dock small {
+  display: block;
+  font-size: 11px;
+  color: #64735e;
+  margin-top: 4px;
+}
+.dock-clear {
+  background: transparent;
+  border: 0;
+  padding: 10px 4px;
+  color: #5d6d58;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+.application-checklist {
+  background: #f5f8f2;
+  border: 1px solid #dce6d5;
+  border-radius: 14px;
+  padding: 22px;
+  margin: 26px 0;
+}
+.checklist-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.checklist-heading h3 {
+  font-size: 19px;
+  margin: 6px 0 0;
+}
+.checklist-count {
+  border-radius: 100px;
+  background: white;
+  color: #2f6748;
+  font-size: 13px;
+  padding: 8px 12px;
+  white-space: nowrap;
+}
+.planning-help {
+  font-size: 13px;
+  color: #64735f;
+  line-height: 1.8;
+  margin: 14px 0 20px;
+}
+.application-checklist progress {
+  display: block;
+  width: 100%;
+  height: 6px;
+  border: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #e3eada;
+  accent-color: #337451;
+}
+.application-checklist progress::-webkit-progress-bar {
+  background: #e3eada;
+}
+.application-checklist progress::-webkit-progress-value {
+  background: #337451;
+}
+.application-checklist fieldset {
+  border: 0;
+  padding: 0;
+  margin: 16px 0 0;
+  min-width: 0;
+}
+.application-checklist label {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px 0;
+  cursor: pointer;
+}
+.application-checklist label + label {
+  border-top: 1px solid #e1e8dc;
+}
+.application-checklist input {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  margin: 2px 0 0;
+  accent-color: #28684d;
+}
+.application-checklist strong,
+.application-checklist small {
+  display: block;
+}
+.application-checklist strong {
+  font-size: 13px;
+  line-height: 1.6;
+}
+.application-checklist small {
+  font-size: 12px;
+  color: #6a7863;
+  line-height: 1.7;
+  margin-top: 4px;
+}
+.application-checklist .step-done strong {
+  color: #34704d;
+}
+.checklist-complete {
+  font-size: 13px;
+  line-height: 1.7;
+  color: #286244;
+}
+.planning-message {
+  background: #f8f1df;
+  color: #715b2d;
+  padding: 16px;
+  border-radius: 10px;
+  margin: 14px 0;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.planning-message .text-button {
+  margin: 4px;
+}
+.comparison-dialog {
+  width: calc(100% - 32px);
+  max-width: 1100px;
+}
+.comparison-dialog h2 {
+  font-size: 27px;
+  margin: 8px 0;
+}
+.comparison-scroll {
+  overflow-x: auto;
+  border: 1px solid #dfe6d8;
+  border-radius: 12px;
+  overscroll-behavior-inline: contain;
+}
+.comparison-scroll-hint {
+  font-size: 12px;
+  color: #6a7b63;
+}
+.comparison-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+  font-size: 13px;
+  line-height: 1.8;
+  text-align: left;
+}
+.comparison-table th,
+.comparison-table td {
+  padding: 18px;
+  vertical-align: top;
+  border-bottom: 1px solid #e1e7dc;
+  border-right: 1px solid #e1e7dc;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  min-width: 240px;
+  max-width: 340px;
+}
+.comparison-table th:first-child {
+  min-width: 100px;
+  width: 100px;
+  background: #f6f8f2;
+  font-weight: 600;
+  color: #526949;
+}
+.comparison-table thead th {
+  background: #f4f8ee;
+}
+.comparison-table th:last-child,
+.comparison-table td:last-child {
+  border-right: 0;
+}
+.comparison-table tr:last-child td,
+.comparison-table tr:last-child th {
+  border-bottom: 0;
+}
+.comparison-table h3 {
+  font-size: 16px;
+  line-height: 1.7;
+  margin: 14px 0;
+}
+.comparison-table .text-button {
+  font-size: 12px;
+  padding: 6px 8px;
+}
+.comparison-source {
+  display: block;
+  color: #34694a;
+  margin-top: 16px;
+  font-size: 12px;
+}
+.planning-empty {
+  text-align: center;
+  padding: 40px 16px;
+}
+.planning-empty h3 {
+  font-size: 20px;
+}
+.planning-empty p {
+  color: #62725e;
+  font-size: 14px;
+  line-height: 1.8;
+  margin-bottom: 24px;
+}
+@media (max-width: 600px) {
+  .planning-intro {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 16px;
+  }
+  .compare-dock {
+    padding: 12px;
+    gap: 8px;
+  }
+  .compare-dock small {
+    display: none;
+  }
+  .compare-dock strong {
+    font-size: 12px;
+  }
+  .compare-dock strong span {
+    margin-left: 2px;
+  }
+  .compare-dock .primary-button {
+    padding: 10px 14px;
+    min-height: 40px;
+    font-size: 12px;
+  }
+  .application-checklist {
+    padding: 16px;
+  }
+  .comparison-dialog {
+    padding: 18px;
+  }
+  .comparison-dialog h2 {
+    font-size: 23px;
+  }
+  .comparison-table th,
+  .comparison-table td {
+    min-width: 210px;
+    padding: 14px;
+  }
+  .comparison-table th:first-child {
+    min-width: 82px;
+    width: 82px;
+  }
+}
+.comparison-table th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  box-shadow: 1px 0 0 #dfe6d8;
+}

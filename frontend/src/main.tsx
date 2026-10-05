@@ -1,23 +1,15 @@
 import { StrictMode, useEffect, useRef, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import "./style.css";
+import type { Benefit } from "./benefit";
+import {
+  usePlanning,
+  ApplicationChecklist,
+  ComparisonDialog,
+} from "./PlanningPanel";
 import { useAccount, AccountPanel, accountCategories } from "./account";
 
 const apiBase = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
-type Benefit = {
-  id: string;
-  title: string;
-  organization: string;
-  region: string;
-  category: string;
-  summary: string;
-  eligibility: string;
-  support: string;
-  applicationMethod: string;
-  deadline: string | null;
-  periodLabel: string;
-  sourceUrl: string;
-};
 type IconName =
   | "search"
   | "arrow"
@@ -186,6 +178,16 @@ function initialParams() {
 function App() {
   const account = useAccount();
   const saved = account.saved;
+  const planningOwner = account.session?.user.id || "guest";
+  const planning = usePlanning(planningOwner);
+  const [comparisonOwner, setComparisonOwner] = useState<string | null>(null);
+  const comparisonOpen = comparisonOwner === planningOwner;
+  useEffect(() => {
+    setComparisonOwner(null);
+  }, [planningOwner]);
+  useEffect(() => {
+    if (planning.message) setNotice(planning.message);
+  }, [planning.message]);
   const [accountOpen, setAccountOpen] = useState(false);
   const [items, setItems] = useState<Benefit[]>([]);
   const [demo, setDemo] = useState(false),
@@ -391,7 +393,7 @@ function App() {
     page,
     sort,
     savedOnly,
-    saved.join(","),
+    savedOnly ? saved.join(",") : "",
     account.session?.access_token,
   ]);
   useEffect(() => {
@@ -451,6 +453,9 @@ function App() {
 
   return (
     <>
+      {planning.data.compareIds.length > 0 && (
+        <style>{`body { padding-bottom: 100px; } .toast { bottom: 110px; }`}</style>
+      )}
       <a className="skip-link" href="#results">
         혜택 목록으로 바로가기
       </a>
@@ -658,6 +663,24 @@ function App() {
                 </select>
               </label>
             </div>
+            <div className="planning-intro">
+              <span>
+                <strong>찾고, 비교하고, 준비해요.</strong>
+                <small>
+                  공고별 ‘비교 담기’와 상세 화면의 신청 체크리스트를 이용해
+                  보세요.
+                </small>
+              </span>
+              <button
+                className="secondary-button"
+                onClick={() => setComparisonOwner(planningOwner)}
+              >
+                혜택 비교{" "}
+                {planning.data.compareIds.length > 0
+                  ? planning.data.compareIds.length
+                  : ""}
+              </button>
+            </div>
             <div className="filter-toolbar">
               <label className="extra-category">
                 <span className="sr-only">모든 지원 분야</span>
@@ -827,6 +850,26 @@ function App() {
                       </button>
                     </h3>
                     <p className="card-summary">{b.summary}</p>
+                    <div className="card-planning">
+                      <button
+                        className="compare-toggle"
+                        aria-pressed={planning.data.compareIds.includes(b.id)}
+                        onClick={() => planning.toggle(b.id)}
+                        aria-label={`${b.title} ${planning.data.compareIds.includes(b.id) ? "비교에서 빼기" : "비교 담기"}`}
+                      >
+                        {planning.data.compareIds.includes(b.id)
+                          ? "✓ 비교에 담았어요"
+                          : "+ 비교 담기"}
+                      </button>
+                      <button
+                        className="checklist-shortcut"
+                        onClick={() => openDetail(b.id)}
+                        aria-label={`${b.title} 신청 체크리스트`}
+                      >
+                        신청 준비 {planning.data.checklists[b.id]?.length || 0}
+                        /4
+                      </button>
+                    </div>
                     <div className="card-bottom">
                       <span>
                         <Icon name="clock" />
@@ -1071,7 +1114,17 @@ function App() {
                 </div>
               ))}
             </dl>
+            <ApplicationChecklist benefit={selected} planning={planning} />
             <div className="dialog-actions">
+              <button
+                className="secondary-button"
+                aria-pressed={planning.data.compareIds.includes(selected.id)}
+                onClick={() => planning.toggle(selected.id)}
+              >
+                {planning.data.compareIds.includes(selected.id)
+                  ? "비교에서 빼기"
+                  : "비교 담기"}
+              </button>
               <button className="secondary-button" onClick={shareDetail}>
                 링크 복사
               </button>
@@ -1098,6 +1151,37 @@ function App() {
           </>
         )}
       </dialog>
+      {comparisonOpen && (
+        <ComparisonDialog
+          key={planningOwner}
+          ids={planning.data.compareIds}
+          planning={planning}
+          onClose={() => setComparisonOwner(null)}
+          onDetail={(id) => {
+            setComparisonOwner(null);
+            openDetail(id);
+          }}
+        />
+      )}
+      {planning.data.compareIds.length > 0 && (
+        <section className="compare-dock" aria-label="선택한 혜택 비교">
+          <div>
+            <strong>
+              비교할 혜택 <span>{planning.data.compareIds.length}/3</span>
+            </strong>
+            <small>페이지를 이동해도 선택은 유지돼요</small>
+          </div>
+          <button className="dock-clear" onClick={planning.clearCompare}>
+            비우기
+          </button>
+          <button
+            className="primary-button"
+            onClick={() => setComparisonOwner(planningOwner)}
+          >
+            비교하기
+          </button>
+        </section>
+      )}
       {accountOpen && (
         <AccountPanel
           account={account}
