@@ -1,6 +1,7 @@
 import { StrictMode, useEffect, useRef, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import "./style.css";
+import { useAccount, AccountPanel, accountCategories } from "./account";
 
 const apiBase = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 type Benefit = {
@@ -169,33 +170,165 @@ const regions = [
   "경남",
   "제주",
 ];
-function readSaved(): string[] {
-  try {
-    const value = JSON.parse(localStorage.getItem("benefit-saved") || "[]");
-    return Array.isArray(value)
-      ? value.filter((v) => typeof v === "string")
-      : [];
-  } catch {
-    return [];
-  }
+function deadlineLabel(date: string) {
+  const today = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+  const days = Math.round((Date.parse(date) - Date.parse(today)) / 86400000);
+  return days < 0 ? "마감" : days === 0 ? "오늘 마감" : `D-${days}`;
+}
+function initialParams() {
+  return new URLSearchParams(location.search);
 }
 function App() {
+  const account = useAccount();
+  const saved = account.saved;
+  const [accountOpen, setAccountOpen] = useState(false);
   const [items, setItems] = useState<Benefit[]>([]);
   const [demo, setDemo] = useState(false),
     [loading, setLoading] = useState(true),
     [error, setError] = useState(false);
-  const [q, setQ] = useState(""),
-    [region, setRegion] = useState("전체"),
-    [category, setCategory] = useState("전체");
-  const [openOnly, setOpenOnly] = useState(false),
-    [savedOnly, setSavedOnly] = useState(false);
-  const [saved, setSaved] = useState(readSaved),
-    [selected, setSelected] = useState<Benefit | null>(null);
+  const [q, rawQ] = useState(() => initialParams().get("q") || ""),
+    [region, rawRegion] = useState(
+      () => initialParams().get("region") || "전체",
+    ),
+    [category, rawCategory] = useState(
+      () => initialParams().get("category") || "전체",
+    );
+  const [openOnly, rawOpen] = useState(
+      () => initialParams().get("openOnly") === "true",
+    ),
+    [savedOnly, rawSavedOnly] = useState(
+      () => initialParams().get("view") === "saved",
+    );
+  const [selected, setSelected] = useState<Benefit | null>(null),
+    [detailId, setDetailId] = useState(
+      () => initialParams().get("benefit") || "",
+    ),
+    [detailError, setDetailError] = useState("");
   const [retry, setRetry] = useState(0),
     [notice, setNotice] = useState(""),
-    [sort, setSort] = useState("default");
+    [sort, rawSort] = useState(() => initialParams().get("sort") || "default");
+  const [page, setPage] = useState(() =>
+      Math.max(1, Math.min(10000, Number(initialParams().get("page")) || 1)),
+    ),
+    [total, setTotal] = useState(0),
+    [pages, setPages] = useState(0);
+  const [dataStatus, setDataStatus] = useState<{
+    configured: boolean;
+    latest: null | { status: string; finishedAt: string };
+  } | null>(null);
   const dialog = useRef<HTMLDialogElement>(null),
     searchInput = useRef<HTMLInputElement>(null);
+  const setQ = (v: string) => {
+    rawQ(v);
+    setPage(1);
+  };
+  const setRegion = (v: string) => {
+    rawRegion(v);
+    setPage(1);
+  };
+  const setCategory = (v: string) => {
+    rawCategory(v);
+    setPage(1);
+  };
+  const setOpenOnly = (v: boolean) => {
+    rawOpen(v);
+    setPage(1);
+  };
+  const setSavedOnly = (v: boolean) => {
+    rawSavedOnly(v);
+    setPage(1);
+  };
+  const setSort = (v: string) => {
+    rawSort(v);
+    setPage(1);
+  };
+  useEffect(() => {
+    if (account.recovery) setAccountOpen(true);
+  }, [account.recovery]);
+  useEffect(() => {
+    if (account.error) setNotice(account.error);
+  }, [account.error]);
+  useEffect(() => {
+    const abort = new AbortController();
+    fetch(`${apiBase}/api/data-status`, { signal: abort.signal })
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setDataStatus)
+      .catch(() => {});
+    return () => abort.abort();
+  }, [retry]);
+  useEffect(() => {
+    const pop = () => {
+      const p = initialParams();
+      rawQ(p.get("q") || "");
+      rawRegion(p.get("region") || "전체");
+      rawCategory(p.get("category") || "전체");
+      rawOpen(p.get("openOnly") === "true");
+      rawSavedOnly(p.get("view") === "saved");
+      rawSort(p.get("sort") || "default");
+      setPage(Math.max(1, Math.min(10000, Number(p.get("page")) || 1)));
+      setDetailId(p.get("benefit") || "");
+    };
+    addEventListener("popstate", pop);
+    return () => removeEventListener("popstate", pop);
+  }, []);
+  useEffect(() => {
+    const u = new URL(location.href);
+    u.search = "";
+    if (q) u.searchParams.set("q", q);
+    if (region !== "전체") u.searchParams.set("region", region);
+    if (category !== "전체") u.searchParams.set("category", category);
+    if (openOnly) u.searchParams.set("openOnly", "true");
+    if (savedOnly) u.searchParams.set("view", "saved");
+    if (sort !== "default") u.searchParams.set("sort", sort);
+    if (page > 1) u.searchParams.set("page", String(page));
+    if (detailId) u.searchParams.set("benefit", detailId);
+    history.replaceState(null, "", u);
+  }, [q, region, category, openOnly, savedOnly, sort, page, detailId]);
+  function openDetail(id: string) {
+    const u = new URL(location.href);
+    u.searchParams.set("benefit", id);
+    history.pushState(null, "", u);
+    setDetailId(id);
+  }
+  function closeDetail() {
+    setDetailId("");
+    setSelected(null);
+  }
+  useEffect(() => {
+    if (!detailId) {
+      setSelected(null);
+      dialog.current?.close();
+      return;
+    }
+    const abort = new AbortController();
+    setSelected(null);
+    setDetailError("");
+    if (!dialog.current?.open) dialog.current?.showModal();
+    fetch(`${apiBase}/api/benefits/${encodeURIComponent(detailId)}`, {
+      signal: abort.signal,
+    })
+      .then(async (r) => {
+        if (!r.ok)
+          throw Error(
+            r.status === 404
+              ? "이 공고를 더 이상 찾을 수 없어요."
+              : "상세 정보를 불러오지 못했어요.",
+          );
+        return r.json();
+      })
+      .then((b) => {
+        if (!abort.signal.aborted) setSelected(b);
+      })
+      .catch((e) => {
+        if (!abort.signal.aborted) setDetailError(e.message);
+      });
+    return () => abort.abort();
+  }, [detailId, retry]);
   const activeFilters = Boolean(
     q.trim() || region !== "전체" || category !== "전체" || openOnly,
   );
@@ -210,8 +343,22 @@ function App() {
           region,
           category,
           openOnly: String(openOnly),
+          page: String(page),
+          size: "12",
+          sort,
         });
+        if (savedOnly) {
+          if (account.session) params.set("savedOnly", "true");
+          else
+            params.set(
+              "ids",
+              saved.length ? saved.join(",") : "__empty_guest_list__",
+            );
+        }
         const response = await fetch(`${apiBase}/api/benefits?${params}`, {
+          headers: account.session
+            ? { Authorization: `Bearer ${account.session.access_token}` }
+            : {},
           signal: abort.signal,
         });
         if (!response.ok) throw new Error("Request failed");
@@ -220,6 +367,10 @@ function App() {
         if (!abort.signal.aborted) {
           setItems(data.items);
           setDemo(data.demo);
+          setTotal(data.total ?? data.items.length);
+          setPages(data.totalPages ?? 1);
+          if (data.totalPages > 0 && page > data.totalPages)
+            setPage(data.totalPages);
         }
       } catch {
         if (!abort.signal.aborted) setError(true);
@@ -231,27 +382,34 @@ function App() {
       clearTimeout(timer);
       abort.abort();
     };
-  }, [q, region, category, openOnly, retry]);
-  useEffect(() => {
-    if (selected && !dialog.current?.open) dialog.current?.showModal();
-    if (!selected) dialog.current?.close();
-  }, [selected]);
+  }, [
+    q,
+    region,
+    category,
+    openOnly,
+    retry,
+    page,
+    sort,
+    savedOnly,
+    saved.join(","),
+    account.session?.access_token,
+  ]);
   useEffect(() => {
     if (!notice) return;
     const timer = setTimeout(() => setNotice(""), 4000);
     return () => clearTimeout(timer);
   }, [notice]);
   function toggle(id: string) {
-    const exists = saved.includes(id);
-    const next = exists ? saved.filter((x) => x !== id) : [...saved, id];
-    setSaved(next);
+    void account.toggle(id);
+  }
+  async function shareDetail() {
+    const u = new URL(location.origin);
+    u.searchParams.set("benefit", detailId);
     try {
-      localStorage.setItem("benefit-saved", JSON.stringify(next));
-      setNotice(
-        exists ? "관심 혜택에서 해제했어요." : "관심 혜택에 저장했어요.",
-      );
+      await navigator.clipboard.writeText(u.href);
+      setNotice("상세 링크를 복사했어요.");
     } catch {
-      setNotice("저장 공간을 사용할 수 없어 이번 방문에만 기억해요.");
+      setNotice("주소창의 링크를 복사해 공유해 주세요.");
     }
   }
   function resetFilters() {
@@ -266,24 +424,14 @@ function App() {
     resetFilters();
   }
   function goToResults() {
-    document
-      .getElementById("results")
-      ?.scrollIntoView({
-        behavior: matchMedia("(prefers-reduced-motion: reduce)").matches
-          ? "instant"
-          : "smooth",
-        block: "start",
-      });
+    document.getElementById("results")?.scrollIntoView({
+      behavior: matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "instant"
+        : "smooth",
+      block: "start",
+    });
   }
-  const visible = items
-    .filter((b) => !savedOnly || saved.includes(b.id))
-    .sort((a, b) =>
-      sort === "deadline"
-        ? (a.deadline || "9999").localeCompare(b.deadline || "9999")
-        : sort === "title"
-          ? a.title.localeCompare(b.title, "ko")
-          : 0,
-    );
+  const visible = items;
   const emptyTitle =
     savedOnly && saved.length === 0
       ? "마음에 드는 혜택을 모아보세요"
@@ -328,6 +476,14 @@ function App() {
               }}
             >
               관심 혜택 <span className="nav-count">{saved.length}</span>
+            </button>
+            <button
+              className="account-nav"
+              onClick={() => setAccountOpen(true)}
+            >
+              {account.session
+                ? `내 계정${account.alerts.some((n) => !n.read) ? " · 새 알림" : ""}`
+                : "로그인"}
             </button>
           </nav>
           <span className="header-caption">
@@ -429,6 +585,7 @@ function App() {
               <input
                 ref={searchInput}
                 type="search"
+                maxLength={200}
                 aria-label="지원금 검색"
                 placeholder="지원금 이름이나 키워드를 입력하세요"
                 value={q}
@@ -488,7 +645,7 @@ function App() {
                 <h2 id="results-title">
                   {savedOnly ? "저장한 관심 혜택" : "지금 살펴볼 혜택"}
                   {!loading && !error && (
-                    <span className="result-count">{visible.length}</span>
+                    <span className="result-count">{total}</span>
                   )}
                 </h2>
               </div>
@@ -502,6 +659,18 @@ function App() {
               </label>
             </div>
             <div className="filter-toolbar">
+              <label className="extra-category">
+                <span className="sr-only">모든 지원 분야</span>
+                <select
+                  aria-label="모든 지원 분야"
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                >
+                  {accountCategories.map((c) => (
+                    <option key={c}>{c}</option>
+                  ))}
+                </select>
+              </label>
               <label className="check">
                 <input
                   type="checkbox"
@@ -550,7 +719,7 @@ function App() {
                 ? "혜택을 불러오는 중입니다."
                 : error
                   ? "혜택 조회에 실패했습니다."
-                  : `${visible.length}개의 혜택이 있습니다.`}
+                  : `${total}개의 혜택이 있습니다.`}
             </p>
             {loading ? (
               <div className="benefit-grid" aria-label="혜택 불러오는 중">
@@ -653,19 +822,21 @@ function App() {
                     </div>
                     <p className="organization">{b.organization}</p>
                     <h3>
-                      <button onClick={() => setSelected(b)}>{b.title}</button>
+                      <button onClick={() => openDetail(b.id)}>
+                        {b.title}
+                      </button>
                     </h3>
                     <p className="card-summary">{b.summary}</p>
                     <div className="card-bottom">
                       <span>
                         <Icon name="clock" />
                         {b.deadline
-                          ? `${b.deadline}까지`
+                          ? `${b.deadline} · ${deadlineLabel(b.deadline)}`
                           : b.periodLabel || "기간 별도 확인"}
                       </span>
                       <button
                         aria-label={`${b.title} 자세히 보기`}
-                        onClick={() => setSelected(b)}
+                        onClick={() => openDetail(b.id)}
                       >
                         <Icon name="arrow" />
                       </button>
@@ -673,6 +844,46 @@ function App() {
                   </article>
                 ))}
               </div>
+            )}
+            {!loading && !error && pages > 1 && (
+              <nav className="pagination" aria-label="검색 결과 페이지">
+                <button
+                  className="secondary-button"
+                  disabled={page <= 1}
+                  onClick={() => {
+                    setPage(page - 1);
+                    goToResults();
+                  }}
+                >
+                  이전
+                </button>
+                <span aria-live="polite">
+                  {page} / {pages}
+                </span>
+                <button
+                  className="secondary-button"
+                  disabled={page >= pages}
+                  onClick={() => {
+                    setPage(page + 1);
+                    goToResults();
+                  }}
+                >
+                  다음
+                </button>
+              </nav>
+            )}
+            {dataStatus && (
+              <p className="data-status">
+                {!dataStatus.configured
+                  ? "공식 공고 연동을 준비하고 있어요."
+                  : dataStatus.latest?.status === "SUCCESS"
+                    ? `공식 공고 업데이트 · ${new Date(dataStatus.latest.finishedAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}`
+                    : dataStatus.latest?.status === "RUNNING"
+                      ? "공식 공고를 불러오고 있어요."
+                      : dataStatus.latest
+                        ? "공고 업데이트가 지연되고 있어요. 신청 전 공식 안내를 확인해 주세요."
+                        : "첫 공식 공고 업데이트를 기다리고 있어요."}
+              </p>
             )}
           </section>
           <aside className="side-column" aria-label="혜택 이용 가이드">
@@ -702,7 +913,11 @@ function App() {
                   <Icon name="arrow" />
                 </span>
               </button>
-              <small>이 브라우저에 저장돼요</small>
+              <small>
+                {account.session
+                  ? "로그인한 계정에 저장돼요"
+                  : "이 브라우저에 저장돼요"}
+              </small>
             </section>
             <section className="guide-panel">
               <h2>이렇게 이용해 보세요</h2>
@@ -765,7 +980,8 @@ function App() {
         <p>
           지원 자격과 신청 기간은 해당 기관의 공식 안내를 확인해 주세요.
           <br />
-          관심 혜택은 현재 브라우저에 저장되며, 다른 기기와 동기화되지 않습니다.
+          로그인하면 관심 혜택을 계정에 저장하고 다른 기기에서도 확인할 수
+          있어요.
         </p>
       </footer>
       {notice && (
@@ -776,8 +992,8 @@ function App() {
       )}
       <dialog
         ref={dialog}
-        onCancel={() => setSelected(null)}
-        onClose={() => setSelected(null)}
+        onCancel={closeDetail}
+        onClose={closeDetail}
         onClick={(e) => {
           if (e.target === dialog.current) {
             const rect = dialog.current.getBoundingClientRect();
@@ -787,11 +1003,36 @@ function App() {
               e.clientY < rect.top ||
               e.clientY > rect.bottom
             )
-              setSelected(null);
+              closeDetail();
           }
         }}
         aria-labelledby="detail-title"
       >
+        {detailId && !selected && (
+          <>
+            <div className="dialog-top">
+              <h2 id="detail-title">혜택 상세</h2>
+              <button
+                className="close-button"
+                onClick={closeDetail}
+                aria-label="상세 닫기"
+              >
+                ×
+              </button>
+            </div>
+            <p role={detailError ? "alert" : "status"}>
+              {detailError || "상세 정보를 불러오는 중…"}
+            </p>
+            {detailError && (
+              <button
+                className="secondary-button"
+                onClick={() => setRetry((v) => v + 1)}
+              >
+                다시 시도
+              </button>
+            )}
+          </>
+        )}
         {selected && (
           <>
             <div className="dialog-top">
@@ -801,7 +1042,7 @@ function App() {
               <button
                 className="close-button"
                 aria-label="상세 닫기"
-                onClick={() => setSelected(null)}
+                onClick={closeDetail}
               >
                 <Icon name="close" />
               </button>
@@ -831,6 +1072,9 @@ function App() {
               ))}
             </dl>
             <div className="dialog-actions">
+              <button className="secondary-button" onClick={shareDetail}>
+                링크 복사
+              </button>
               <button
                 className="secondary-button"
                 onClick={() => toggle(selected.id)}
@@ -854,6 +1098,19 @@ function App() {
           </>
         )}
       </dialog>
+      {accountOpen && (
+        <AccountPanel
+          account={account}
+          onClose={() => setAccountOpen(false)}
+          onOpen={openDetail}
+          onApply={(p) => {
+            setRegion(p.region);
+            setCategory(p.category);
+            setSavedOnly(false);
+            goToResults();
+          }}
+        />
+      )}
     </>
   );
 }
