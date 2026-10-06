@@ -1,3 +1,4 @@
+import bundledDistricts from "./district-options.json";
 import { createDistrictCache, requestDistricts } from "./districts";
 import { dataStatusMessage, type DataStatus } from "./dataStatus";
 import { StrictMode, useEffect, useRef, useState, type ReactNode } from "react";
@@ -318,11 +319,13 @@ function App() {
       setDistrictOptions({region, items: [], loading: false, error: false, cached: false});
       return;
     }
-    const cached = districtCache.get(region);
+    const bundled = (bundledDistricts as Record<string, string[]>)[region] || [];
+    const cached = districtCache.get(region) || (bundled.length ? bundled : null);
     setDistrictOptions({region, items: cached || [], loading: true, error: false, cached: cached !== null});
     requestDistricts(`${apiBase}/api/regions/districts?${new URLSearchParams({region})}`, abort.signal)
       .then(options => {
         if (!abort.signal.aborted) {
+          options = [...new Set([...bundled, ...options])].sort((a, b) => a.localeCompare(b, "ko"));
           districtCache.save(region, options);
           setDistrictOptions({region, items: options, loading: false, error: false, cached: false});
         }
@@ -668,9 +671,9 @@ function App() {
         {region !== "전체" && <div className="district-help">
           <p role="status" aria-live="polite">
             {districtOptions.error
-              ? districtOptions.cached ? "최신 목록을 확인하지 못해 이전 목록을 표시하고 있어요. 아래에서 다시 불러올 수 있어요." : "세부 지역 응답이 늦거나 연결하지 못했어요. 잠시 후 다시 불러와 주세요."
+              ? districtOptions.cached ? "최신 목록을 확인하지 못해 저장된 목록을 표시하고 있어요. 아래에서 다시 불러올 수 있어요." : "세부 지역 응답이 늦거나 연결하지 못했어요. 잠시 후 다시 불러와 주세요."
               : districtOptions.loading
-                ? districtOptions.cached ? "이전 목록으로 선택할 수 있어요. 최신 목록을 확인하고 있어요." : "세부 지역을 불러오고 있어요. 응답이 없으면 20초 안에 다시 불러올 수 있어요."
+                ? districtOptions.cached ? "지역을 바로 선택할 수 있어요. 최신 목록을 확인하고 있어요." : "세부 지역을 불러오고 있어요. 응답이 없으면 20초 안에 다시 불러올 수 있어요."
                 : districtOptions.items.length === 0 ? "현재 공고에서 확인된 시·군·구가 없어요. 시·도 단위로 찾아보세요." : "세부 지역은 제공기관 기준이에요. 전국·시도 및 세부 지역 미확인 공고도 함께 표시해요. 실제 지원 대상은 공식 안내를 확인해 주세요."}
           </p>
           {(!districtOptions.loading || districtOptions.cached) && <button className="text-button" onClick={() => setDistrictRetry(n => n + 1)} disabled={districtOptions.loading}>

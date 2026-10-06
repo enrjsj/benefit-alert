@@ -27,3 +27,14 @@ test('storage denial preserves an in-memory cache',()=>{
  const cache=createDistrictCache({getItem:()=>{throw Error()},setItem:()=>{throw Error()}});
  cache.save('경기',['수원시'],100);assert.deepEqual(cache.get('경기',101),['수원시']);
 });
+
+test('bundled districts support first visits without network or storage',async()=>{
+ const {default:lists}=await import('../src/district-options.json',{with:{type:'json'}});
+ assert.equal(lists['경기'].length,31);
+ assert.ok(lists['경기'].includes('수원시'));
+ assert.equal(lists['서울'].length,25);
+ for(const items of Object.values(lists)) {
+  assert.equal(new Set(items).size,items.length);
+  assert.ok(items.every(item=>/^[가-힣]+[시군구]$/.test(item)));
+ }
+});
