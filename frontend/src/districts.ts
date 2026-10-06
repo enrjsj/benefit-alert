@@ -1,5 +1,8 @@
 const CACHE_AGE = 24 * 60 * 60 * 1000;
 type CacheStorage = Pick<Storage, "getItem" | "setItem">;
+export function mergeDistrictOptions(bundled: string[], latest: string[]): string[] {
+  return [...new Set([...bundled, ...latest])].sort((a, b) => a.localeCompare(b, "ko"));
+}
 const parseItems = (value: unknown): string[] => {
   if (!Array.isArray(value) || value.length > 300 || !value.every(item =>
     typeof item === "string" && item.length <= 50 && /^[가-힣]+[시군구](?: [가-힣]+구)?$/.test(item))) throw Error("invalid_districts");

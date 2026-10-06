@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {createDistrictCache, requestDistricts} from '../src/districts.ts';
+import {createDistrictCache, requestDistricts, mergeDistrictOptions} from '../src/districts.ts';
 test('a hanging request and hanging JSON body both time out',async()=>{
  for(const fetcher of [()=>new Promise(()=>{}),async()=>({ok:true,json:()=>new Promise(()=>{})})])
   await assert.rejects(requestDistricts('/districts',new AbortController().signal,fetcher,10),/district_timeout/);
@@ -33,8 +33,16 @@ test('bundled districts support first visits without network or storage',async()
  assert.equal(lists['경기'].length,31);
  assert.ok(lists['경기'].includes('수원시'));
  assert.equal(lists['서울'].length,25);
+ assert.equal(lists['광주'].length,5);
+ assert.equal(lists['전남'].length,22);
  for(const items of Object.values(lists)) {
   assert.equal(new Set(items).size,items.length);
   assert.ok(items.every(item=>/^[가-힣]+[시군구]$/.test(item)));
  }
+});
+
+test('a previously cached empty list cannot hide newly recovered district options',()=>{
+ const cache=createDistrictCache(null);cache.save('광주',[]);
+ assert.deepEqual(mergeDistrictOptions(['광산구','동구'],cache.get('광주')),['광산구','동구']);
+ assert.deepEqual(mergeDistrictOptions(['광산구','동구'],['동구','서구']),['광산구','동구','서구']);
 });

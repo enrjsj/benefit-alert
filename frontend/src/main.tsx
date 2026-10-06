@@ -1,5 +1,5 @@
 import bundledDistricts from "./district-options.json";
-import { createDistrictCache, requestDistricts } from "./districts";
+import { createDistrictCache, requestDistricts, mergeDistrictOptions } from "./districts";
 import { dataStatusMessage, type DataStatus } from "./dataStatus";
 import { StrictMode, useEffect, useRef, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
@@ -320,12 +320,14 @@ function App() {
       return;
     }
     const bundled = (bundledDistricts as Record<string, string[]>)[region] || [];
-    const cached = districtCache.get(region) || (bundled.length ? bundled : null);
+    const stored = districtCache.get(region);
+    const available = mergeDistrictOptions(bundled, stored || []);
+    const cached = available.length || stored !== null ? available : null;
     setDistrictOptions({region, items: cached || [], loading: true, error: false, cached: cached !== null});
     requestDistricts(`${apiBase}/api/regions/districts?${new URLSearchParams({region})}`, abort.signal)
       .then(options => {
         if (!abort.signal.aborted) {
-          options = [...new Set([...bundled, ...options])].sort((a, b) => a.localeCompare(b, "ko"));
+          options = mergeDistrictOptions(bundled, options);
           districtCache.save(region, options);
           setDistrictOptions({region, items: options, loading: false, error: false, cached: false});
         }

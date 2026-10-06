@@ -1,6 +1,7 @@
 package com.benefitalert.collection;
 
 import com.benefitalert.Benefit;
+import com.benefitalert.RegionScope;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.net.URI;
 import java.time.LocalDate;
@@ -17,6 +18,8 @@ public final class Gov24Mapper {
   String region="지역확인";
   String[][] names={{"서울","서울"},{"부산","부산"},{"대구","대구"},{"인천","인천"},{"광주","광주"},{"대전","대전"},{"울산","울산"},{"세종","세종"},{"경기","경기"},{"강원","강원"},{"충청북","충북"},{"충청남","충남"},{"전라북","전북"},{"전북","전북"},{"전라남","전남"},{"경상북","경북"},{"경상남","경남"},{"제주","제주"}};
   for(String[] pair:names) if(org.startsWith(pair[0])) {region=pair[1];break;}
+  String mergedRegion=RegionScope.mergedProviderRegion(org);
+  if(!mergedRegion.isEmpty()) region=mergedRegion;
   if(value(n,"소관기관유형").equals("중앙행정기관")) region="전국";
   String category="기타";
   if(field.contains("주거") || field.contains("자립")) category="주거";
