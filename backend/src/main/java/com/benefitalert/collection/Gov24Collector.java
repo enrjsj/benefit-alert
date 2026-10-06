@@ -19,14 +19,17 @@ import org.springframework.web.client.RestClientResponseException;
 @Component @Profile("prod")
 public class Gov24Collector {
  private final JdbcClient jdbc; private final String key; private final RestClient client;
+ private final java.util.function.LongSupplier ticker;
+ private static final long MAX_RUN_NANOS=Duration.ofMinutes(40).toNanos();
  @org.springframework.beans.factory.annotation.Autowired
  public Gov24Collector(JdbcClient jdbc,@Value("${GOV24_API_KEY:}") String key) {
-  this.jdbc=jdbc;this.key=key.strip();
+  this.jdbc=jdbc;this.key=key.strip();this.ticker=System::nanoTime;
   var factory=new JdkClientHttpRequestFactory(HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build());
   factory.setReadTimeout(Duration.ofSeconds(30));
   client=RestClient.builder().baseUrl("https://api.odcloud.kr/api/gov24/v3").requestFactory(factory).build();
  }
- Gov24Collector(JdbcClient jdbc,String key,RestClient client){this.jdbc=jdbc;this.key=key;this.client=client;}
+ Gov24Collector(JdbcClient jdbc,String key,RestClient client){this(jdbc,key,client,System::nanoTime);}
+ Gov24Collector(JdbcClient jdbc,String key,RestClient client,java.util.function.LongSupplier ticker){this.jdbc=jdbc;this.key=key;this.client=client;this.ticker=ticker;}
  public boolean enabled(){return !key.isBlank();}
  @Scheduled(initialDelay=45000,fixedDelay=60000)
  public void collectIfDue() { run(true); }
@@ -48,8 +51,9 @@ public class Gov24Collector {
    }
    jdbc.sql("INSERT INTO collection_run(id,status) VALUES(:id,'RUNNING')").param("id",run).update();
    created=true;
-   Set<String> seen=new HashSet<>();long expected=-1;
+   Set<String> seen=new HashSet<>();long expected=-1;long started=ticker.getAsLong();
    for(int page=1;page<=200;page++) {
+    checkBudget(started);
     renew(run);
     final int current=page;
     // Infuser header keeps the key out of request URLs and logs.
@@ -62,12 +66,15 @@ public class Gov24Collector {
     if(expected!=total || total<=0) throw new IllegalStateException("unstable_snapshot");
     JsonNode rows=root.path("data");
     if(rows.isEmpty()) throw new IllegalStateException("incomplete_snapshot");
+    var batch=com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.arrayNode();
     for(JsonNode row:rows) {
      Benefit b;
      try {b=Gov24Mapper.map(row);} catch(IllegalArgumentException e) {rejected++;fetched++;continue;}
      if(!seen.add(b.id())) throw new IllegalStateException("repeated_record");
-     upsert(b,row.toString(),run);fetched++;
+     batch.add(record(b,row));fetched++;
     }
+    checkBudget(started);
+    if(!batch.isEmpty()) upsertPage(batch,run);
     renew(run);
     jdbc.sql("UPDATE collection_run SET fetched_count=:f,rejected_count=:r WHERE id=:id AND status='RUNNING'").param("f",fetched).param("r",rejected).param("id",run).update();
     if(fetched>=expected) {
@@ -86,7 +93,7 @@ public class Gov24Collector {
   } catch(Exception e) { // Only allowlisted codes; exception text may contain credentials.
    status="FAILED";
    if(e instanceof RestClientResponseException upstream) error=switch(upstream.getStatusCode().value()){case 401,403->"credential_rejected";case 429->"rate_limited";default->"upstream_unavailable";};
-   else if(e instanceof IllegalStateException && e.getMessage()!=null && Set.of("invalid_response","unstable_snapshot","incomplete_snapshot","repeated_record","lease_lost").contains(e.getMessage())) error=e.getMessage();
+   else if(e instanceof IllegalStateException && e.getMessage()!=null && Set.of("invalid_response","unstable_snapshot","incomplete_snapshot","repeated_record","lease_lost","collection_timeout").contains(e.getMessage())) error=e.getMessage();
    else error="collection_failed";
   } finally {
    if(created) jdbc.sql("UPDATE collection_run SET status=:s,finished_at=now(),fetched_count=:f,rejected_count=:r,error_code=:e WHERE id=:id AND status='RUNNING'")
@@ -97,17 +104,34 @@ public class Gov24Collector {
  private void renew(UUID run){
   if(jdbc.sql("UPDATE collection_lock SET lease_until=now()+interval '15 minutes' WHERE id=1 AND owner_id=:id AND lease_until>now()").param("id",run).update()==0) throw new IllegalStateException("lease_lost");
  }
- void upsert(Benefit b,String raw,UUID run) {
-  jdbc.sql("""
+ private void checkBudget(long started) {
+  if(ticker.getAsLong()-started>=MAX_RUN_NANOS) throw new IllegalStateException("collection_timeout");
+ }
+ private static JsonNode record(Benefit b,JsonNode raw) {
+  var row=com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode();
+  row.put("id",b.id());row.put("title",b.title());row.put("organization",b.organization());
+  row.put("region",b.region());row.put("category",b.category());row.put("summary",b.summary());
+  row.put("eligibility",b.eligibility());row.put("support",b.support());row.put("application_method",b.applicationMethod());
+  if(b.deadline()==null) row.putNull("deadline");else row.put("deadline",b.deadline().toString());
+  row.put("period_label",b.periodLabel());row.put("source_url",b.sourceUrl());row.set("source_payload",raw);
+  return row;
+ }
+ void upsertPage(JsonNode rows,UUID run) {
+  int written=jdbc.sql("""
+   WITH owned AS (
+    UPDATE collection_lock SET lease_until=now()+interval '15 minutes'
+    WHERE id=1 AND owner_id=:run AND lease_until>now() RETURNING id
+   )
    INSERT INTO benefit(id,title,organization,region,category,summary,eligibility,support,application_method,deadline,period_label,source_url,source_kind,source_payload,last_seen_run)
-   VALUES(:id,:title,:org,:region,:category,:summary,:eligibility,:support,:method,:deadline,:period,:url,'gov24',CAST(:raw AS jsonb),:run)
+   SELECT r.id,r.title,r.organization,r.region,r.category,r.summary,r.eligibility,r.support,r.application_method,r.deadline,r.period_label,r.source_url,'gov24',r.source_payload,:run
+   FROM jsonb_to_recordset(CAST(:rows AS jsonb)) AS r(id text,title text,organization text,region text,category text,summary text,eligibility text,support text,application_method text,deadline date,period_label text,source_url text,source_payload jsonb)
+   WHERE EXISTS(SELECT 1 FROM owned)
    ON CONFLICT(id) DO UPDATE SET title=excluded.title,organization=excluded.organization,region=excluded.region,category=excluded.category,
    summary=excluded.summary,eligibility=excluded.eligibility,support=excluded.support,application_method=excluded.application_method,
    deadline=excluded.deadline,period_label=excluded.period_label,source_url=excluded.source_url,source_payload=excluded.source_payload,
    last_seen_run=excluded.last_seen_run,active=true,
    updated_at=CASE WHEN benefit.source_payload IS DISTINCT FROM excluded.source_payload OR NOT benefit.active THEN now() ELSE benefit.updated_at END
-   """).param("id",b.id()).param("title",b.title()).param("org",b.organization()).param("region",b.region()).param("category",b.category())
-   .param("summary",b.summary()).param("eligibility",b.eligibility()).param("support",b.support()).param("method",b.applicationMethod())
-   .param("deadline",b.deadline(),java.sql.Types.DATE).param("period",b.periodLabel()).param("url",b.sourceUrl()).param("raw",raw).param("run",run).update();
+   """).param("rows",rows.toString()).param("run",run).update();
+  if(written!=rows.size()) throw new IllegalStateException("lease_lost");
  }
 }

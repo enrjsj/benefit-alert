@@ -8,3 +8,6 @@ target/
 *.log
 
 *.tsbuildinfo
+
+__pycache__/
+*.pyc

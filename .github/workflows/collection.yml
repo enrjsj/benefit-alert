@@ -1,0 +1,22 @@
+name: Scheduled collection check
+on:
+  schedule:
+    # Offset from the top of the hour to reduce GitHub queue delays.
+    - cron: '17 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: benefit-alert-collection-check
+  cancel-in-progress: false
+jobs:
+  collect-and-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Wake existing API and verify full collection
+        run: python scripts/check_collection.py
