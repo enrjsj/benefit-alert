@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import type { Benefit } from "./benefit";
 import type { PlanningState } from "./PlanningPanel";
 import { checklistSteps } from "./planning";
+import { deadlineDays, deadlineLabel, matchesDeadline, seoulToday, type DeadlineFilter } from "./deadline";
+import { DeadlineCalendarButton } from "./DeadlineCalendarButton";
 const base = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 
 export function PreparationDialog({ planning, onClose, onDetail }: {
@@ -13,9 +15,18 @@ export function PreparationDialog({ planning, onClose, onDetail }: {
   const [error, setError] = useState(false);
   const [retry, setRetry] = useState(0);
   const [filter, setFilter] = useState("all");
+  const [deadlineFilter, setDeadlineFilter] = useState<DeadlineFilter>("all");
+  const [sort, setSort] = useState("record");
+  const [today, setToday] = useState(seoulToday);
   const ids = Object.keys(planning.data.checklists);
   const joined = JSON.stringify(ids);
   useEffect(() => { dialog.current?.showModal(); }, []);
+  useEffect(() => {
+    const update = () => setToday(seoulToday());
+    const timer = setInterval(update, 60000);
+    addEventListener("focus", update);
+    return () => { clearInterval(timer); removeEventListener("focus", update); };
+  }, []);
   useEffect(() => {
     const abort = new AbortController();
     setLoading(true); setError(false); setItems([]);
@@ -38,8 +49,11 @@ export function PreparationDialog({ planning, onClose, onDetail }: {
     return () => abort.abort();
   }, [joined, retry]);
   const completed = ids.filter((id) => planning.data.checklists[id].length === checklistSteps.length);
-  const shown = ids.filter((id) => filter === "all" || (filter === "done" ? completed.includes(id) : !completed.includes(id)));
-  const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
+  const byId = new Map(items.map(item => [item.id, item]));
+  const shown = ids.filter(id => (filter === "all" || (filter === "done" ? completed.includes(id) : !completed.includes(id)))
+    && matchesDeadline(byId.get(id), deadlineFilter, today));
+  if (sort === "deadline") shown.sort((a, b) =>
+    (deadlineDays(byId.get(a)?.deadline, today) ?? Infinity) - (deadlineDays(byId.get(b)?.deadline, today) ?? Infinity));
   return <dialog ref={dialog} className="preparation-dialog" aria-labelledby="preparation-title" onCancel={onClose} onClose={onClose}>
     <div className="dialog-top"><span className="section-kicker">MY APPLICATIONS</span><button className="close-button" aria-label="신청 준비 닫기" onClick={onClose}>×</button></div>
     <h2 id="preparation-title">내 신청 준비</h2>
@@ -53,6 +67,16 @@ export function PreparationDialog({ planning, onClose, onDetail }: {
       {planning.busy && <p role="status">계정 기록을 동기화하고 있어요…</p>}
       {planning.message && <p role="status" className="planning-message">{planning.message}</p>}
     </div>
+    <div className="preparation-deadlines">
+      <label>마감 조건<select aria-label="신청 준비 마감 조건" value={deadlineFilter} onChange={event => setDeadlineFilter(event.target.value as DeadlineFilter)}>
+        <option value="all">모든 기간</option><option value="week">7일 이내 마감</option><option value="month">30일 이내 마감</option>
+        <option value="expired">마감된 공고</option><option value="unknown">마감일 미정</option>
+      </select></label>
+      <label>정렬<select aria-label="신청 준비 정렬" value={sort} onChange={event => setSort(event.target.value)}>
+        <option value="record">기록순</option><option value="deadline">마감 가까운 순</option>
+      </select></label>
+    </div>
+    <p className="planning-help">마감 조건은 한국 날짜 기준이며 오늘 마감도 포함해요. 상시·기관별 상이 등은 ‘마감일 미정’에서 확인해 주세요.</p>
     <div className="preparation-filters" aria-label="신청 준비 상태 필터">
       {[["all", `전체 ${ids.length}`], ["progress", `진행 중 ${ids.length - completed.length}`], ["done", `확인 완료 ${completed.length}`]].map(([value, label]) =>
         <button key={value} className="secondary-button" aria-pressed={filter === value} onClick={() => setFilter(value)}>{label}</button>)}
@@ -60,18 +84,19 @@ export function PreparationDialog({ planning, onClose, onDetail }: {
     {!planning.ready && !planning.busy && planning.message ? <p>위의 ‘계정 기록 새로고침’을 눌러 다시 불러와 주세요.</p>
       : !planning.ready || loading ? <p role="status">신청 준비 정보를 불러오고 있어요…</p>
       : error ? <div role="alert"><p>공고 정보를 불러오지 못했어요. 준비 기록은 유지돼요.</p><button className="secondary-button" onClick={() => setRetry((n) => n + 1)}>다시 불러오기</button></div>
-      : shown.length === 0 ? <div className="planning-empty"><h3>{ids.length ? "이 상태의 기록이 없어요" : "신청 준비를 시작해 보세요"}</h3><p>공고 상세에서 확인한 항목을 체크하면 여기에 모여요.</p><button className="primary-button" onClick={onClose}>혜택 둘러보기</button></div>
+      : shown.length === 0 ? <div className="planning-empty"><h3>{ids.length ? "선택한 조건에 맞는 기록이 없어요" : "신청 준비를 시작해 보세요"}</h3><p>{ids.length ? "다른 마감 조건이나 준비 상태를 선택해 보세요." : "공고 상세에서 확인한 항목을 체크하면 여기에 모여요."}</p>{ids.length > 0 && <button className="secondary-button" onClick={() => { setFilter("all"); setDeadlineFilter("all"); }}>모든 준비 기록 보기</button>}<button className="primary-button" onClick={onClose}>혜택 둘러보기</button></div>
       : <ul className="preparation-list">{shown.map((id) => {
-        const benefit = items.find((item) => item.id === id);
+        const benefit = byId.get(id);
         const count = planning.data.checklists[id].length;
         return <li key={id}>
           <span className="tag">{count === checklistSteps.length ? "확인 완료" : "진행 중"} · {count}/{checklistSteps.length}</span>
           <h3>{benefit?.title || "더 이상 제공되지 않는 공고"}</h3>
           {!benefit && <p>공고 번호: {id}. 준비 기록은 보관되어 있어요.</p>}
-          {benefit && <p>{benefit.organization} · {benefit.deadline ? `${benefit.deadline}까지${benefit.deadline < today ? " · 마감된 공고" : ""}` : benefit.periodLabel}</p>}
+          {benefit && <p>{benefit.organization} · {benefit.deadline ? `${benefit.deadline} · ${deadlineLabel(benefit.deadline, today)}` : benefit.periodLabel}</p>}
           <progress value={count} max={checklistSteps.length} aria-label={`${benefit?.title || id} 준비 진행률`} />
           <div className="preparation-actions">
             {benefit && <button className="primary-button" onClick={() => onDetail(id)}>준비 이어가기</button>}
+            {benefit && <DeadlineCalendarButton benefit={benefit} today={today} />}
             <button className="text-button" disabled={planning.busy || !planning.ready} onClick={() => {
               if (window.confirm("이 공고의 체크리스트 기록을 삭제할까요?")) planning.removeChecklist(id);
             }}>기록 삭제</button>

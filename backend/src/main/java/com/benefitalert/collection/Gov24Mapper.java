@@ -29,11 +29,7 @@ public final class Gov24Mapper {
   else if(field.contains("교육")) category="교육";
   else if(field.contains("의료") || field.contains("건강")) category="건강";
   else if(field.contains("문화")) category="문화";
-  LocalDate deadline=null;
-  // Only whole, absolute date ranges (or one absolute date) can establish a deadline.
-  if(period.matches("\\d{4}-\\d{2}-\\d{2}(\\s*[~∼]\\s*\\d{4}-\\d{2}-\\d{2})?")) {
-   try {deadline=LocalDate.parse(period.substring(period.length()-10));} catch(Exception ignored) {}
-  }
+  LocalDate deadline=AbsoluteDeadlineV1.parse(period);
   String url=value(n,"상세조회URL");
   try {var uri=URI.create(url);if(!("https".equals(uri.getScheme()) || "http".equals(uri.getScheme())) || uri.getHost()==null || uri.getUserInfo()!=null) url="";} catch(Exception e) {url="";}
   if(url.isBlank()) url="https://www.gov.kr/portal/rcvfvrSvc/dtlEx/"+java.net.URLEncoder.encode(id,java.nio.charset.StandardCharsets.UTF_8);

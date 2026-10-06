@@ -1,3 +1,5 @@
+import { deadlineLabel } from "./deadline";
+import { DeadlineCalendarButton } from "./DeadlineCalendarButton";
 import bundledDistricts from "./district-options.json";
 import { createDistrictCache, requestDistricts, mergeDistrictOptions } from "./districts";
 import { dataStatusMessage, type DataStatus } from "./dataStatus";
@@ -162,16 +164,6 @@ const regions = [
   "경남",
   "제주",
 ];
-function deadlineLabel(date: string) {
-  const today = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Seoul",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
-  const days = Math.round((Date.parse(date) - Date.parse(today)) / 86400000);
-  return days < 0 ? "마감" : days === 0 ? "오늘 마감" : `D-${days}`;
-}
 function initialParams() {
   return new URLSearchParams(location.search);
 }
@@ -1141,8 +1133,9 @@ function App() {
                 ["지원 내용", selected.support],
                 [
                   "신청 기간",
-                  selected.deadline || selected.periodLabel || "공식 안내 확인",
+                  selected.periodLabel || selected.deadline || "공식 안내 확인",
                 ],
+                ...(selected.deadline ? [["마감일", `${selected.deadline} · ${deadlineLabel(selected.deadline)}`]] : []),
                 ["신청 방법", selected.applicationMethod],
               ].map(([k, v]) => (
                 <div key={k}>
@@ -1153,6 +1146,7 @@ function App() {
             </dl>
             <ApplicationChecklist benefit={selected} planning={planning} />
             <div className="dialog-actions">
+              {!demo && <DeadlineCalendarButton key={selected.id} benefit={selected} />}
               <button
                 className="secondary-button"
                 aria-pressed={planning.data.compareIds.includes(selected.id)}
