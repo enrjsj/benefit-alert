@@ -37,6 +37,7 @@ class PlanningControllerTest {
   mvc.perform(post("/api/account/planning/import").header("Authorization","Bearer verified").contentType("application/json")
    .content("{\"version\":1,\"compareIds\":[],\"checklists\":{}}"))
    .andExpect(status().isOk()).andExpect(jsonPath("$.revision").value(1));
-  verify(service).importData(owner,PlanningService.empty());
+  // Preserve omission so the service can distinguish legacy requests from an explicit clear.
+  verify(service).importData(owner,new PlanningService.Data(1,java.util.List.of(),java.util.Map.of(),null));
  }
 }

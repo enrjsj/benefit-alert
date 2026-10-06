@@ -28,7 +28,7 @@ test("account edits persist, reload on another device, and import without cleari
 });
 
 test("a stale device cannot overwrite newer progress and is prompted to retry", async () => {
-  const latest = { version: 1, compareIds: ["other"], checklists: { other: ["documents"] } };
+  const latest = { version: 1, compareIds: ["other"], checklists: { other: ["documents"] }, applications: {} };
   let reads = 0;
   const store = createRemotePlanningStore(async (method) => method === "PUT"
     ? response(0, emptyPlanning(), 409)

@@ -13,14 +13,16 @@ import {
   planningKey,
   setChecklistStep,
   toggleCompare,
-  parsePlanning,
+  readPlanning,
   mergePlanning,
+  setApplication,
+  type ApplicationRecord,
   type Planning,
   type StepId,
 } from "./planning";
 const base = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 type PlannerStore = {
-  getSnapshot: () => { data: Planning; message: string; busy?: boolean; ready?: boolean };
+  getSnapshot: () => { data: Planning; message: string; busy?: boolean; ready?: boolean; applicationsSupported?: boolean };
   subscribe: (fn: () => void) => () => void;
   reload: () => void | Promise<void>;
   update: (change: (data: Planning) => Planning) => void | Promise<void>;
@@ -66,20 +68,25 @@ export function usePlanning(owner: string, token?: string) {
     account: !!token,
     busy: snapshot.busy ?? false,
     ready: snapshot.ready ?? true,
+    applicationsSupported: !token || snapshot.applicationsSupported === true,
     refresh: () => store.reload(),
     importLocal: () => {
       if (!store.importData) return;
       try {
-        const guest = parsePlanning(localStorage.getItem(planningKey("guest")));
-        const legacy = parsePlanning(localStorage.getItem(key));
+        const guest = readPlanning(localStorage, planningKey("guest"));
+        const legacy = readPlanning(localStorage, key);
         void store.importData(mergePlanning(legacy, guest));
       } catch (error) { store.report?.((error as Error).message); }
     },
     removeChecklist: (id: string) => store.update((s: Planning) => {
       const checklists = { ...s.checklists };
+      const applications = { ...s.applications };
       delete checklists[id];
-      return { ...s, checklists };
+      delete applications[id];
+      return { ...s, checklists, applications };
     }),
+    saveApplication: (id: string, entry: ApplicationRecord, expected?: ApplicationRecord) =>
+      store.update(s => setApplication(s, id, entry, expected)),
     toggle: (id: string) => store.update((s) => toggleCompare(s, id)),
     clearCompare: () => store.update((s) => ({ ...s, compareIds: [] })),
     check: (id: string, step: StepId, checked: boolean) =>

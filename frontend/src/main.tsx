@@ -1,5 +1,7 @@
 import { deadlineLabel } from "./deadline";
 import { DeadlineCalendarButton } from "./DeadlineCalendarButton";
+import { ApplicationRecordEditor } from "./ApplicationRecordEditor";
+import { trackedIds } from "./planning";
 import bundledDistricts from "./district-options.json";
 import { createDistrictCache, requestDistricts, mergeDistrictOptions } from "./districts";
 import { dataStatusMessage, type DataStatus } from "./dataStatus";
@@ -172,6 +174,7 @@ function App() {
   const saved = account.saved;
   const planningOwner = account.session?.user.id || "guest";
   const planning = usePlanning(planningOwner, account.session?.access_token);
+  const [recordDirty, setRecordDirty] = useState(false);
   const [preparationOwner, setPreparationOwner] = useState<string | null>(null);
   const [comparisonOwner, setComparisonOwner] = useState<string | null>(null);
   const comparisonOpen = comparisonOwner === planningOwner;
@@ -276,8 +279,15 @@ function App() {
     };
   }, [retry]);
   useEffect(() => {
+    const currentUrl = location.href;
     const pop = () => {
       const p = initialParams();
+      if (recordDirty && (p.get("benefit") || "") !== detailId) {
+        if (!window.confirm("저장하지 않은 신청 상태·메모가 있어요. 저장하지 않고 이동할까요?")) {
+          history.pushState(null, "", currentUrl); return;
+        }
+        setRecordDirty(false);
+      }
       rawQ(p.get("q") || "");
       rawRegion(p.get("region") || "전체");
       rawDistrict(p.get("region") && p.get("region") !== "전체" ? p.get("district") || "" : "");
@@ -290,7 +300,7 @@ function App() {
     };
     addEventListener("popstate", pop);
     return () => removeEventListener("popstate", pop);
-  }, []);
+  }, [recordDirty, detailId]);
   useEffect(() => {
     const u = new URL(location.href);
     u.search = "";
@@ -337,6 +347,8 @@ function App() {
     setDetailId(id);
   }
   function closeDetail() {
+    if (recordDirty && !window.confirm("저장하지 않은 신청 상태·메모가 있어요. 저장하지 않고 닫을까요?")) return;
+    setRecordDirty(false);
     setDetailId("");
     setSelected(null);
   }
@@ -532,7 +544,7 @@ function App() {
                 : "로그인"}
             </button>
             <button onClick={() => setPreparationOwner(planningOwner)}>
-              신청 준비 <span className="nav-count">{Object.keys(planning.data.checklists).length}</span>
+              신청 준비 <span className="nav-count">{trackedIds(planning.data).length}</span>
             </button>
           </nav>
           <span className="header-caption">
@@ -1064,7 +1076,7 @@ function App() {
       )}
       <dialog
         ref={dialog}
-        onCancel={closeDetail}
+        onCancel={event => { event.preventDefault(); closeDetail(); }}
         onClose={closeDetail}
         onClick={(e) => {
           if (e.target === dialog.current) {
@@ -1145,6 +1157,7 @@ function App() {
               ))}
             </dl>
             <ApplicationChecklist benefit={selected} planning={planning} />
+            <ApplicationRecordEditor key={`${planningOwner}:${selected.id}`} id={selected.id} planning={planning} onDirtyChange={setRecordDirty} />
             <div className="dialog-actions">
               {!demo && <DeadlineCalendarButton key={selected.id} benefit={selected} />}
               <button

@@ -6,12 +6,13 @@ export type RemoteSnapshot = {
   ready: boolean;
   busy: boolean;
   message: string;
+  applicationsSupported: boolean;
 };
 type Request = (method: string, body: unknown, signal: AbortSignal, importing?: boolean) => Promise<Response>;
 // A store belongs to one account/session. Stopping it aborts requests and makes
 // late responses harmless, including after logout or React StrictMode cleanup.
 export function createRemotePlanningStore(request: Request) {
-  let snapshot: RemoteSnapshot = { data: emptyPlanning(), revision: 0, ready: false, busy: false, message: "" };
+  let snapshot: RemoteSnapshot = { data: emptyPlanning(), revision: 0, ready: false, busy: false, message: "", applicationsSupported: false };
   let active = false, epoch = 0;
   let controller: AbortController | null = null;
   const listeners = new Set<() => void>();
@@ -38,8 +39,10 @@ export function createRemotePlanningStore(request: Request) {
       }
       if (!response.ok) throw Error(response.status === 401
         ? "로그인 상태를 다시 확인해 주세요."
+        : response.status === 422
+          ? "같은 공고의 신청 상태나 메모가 달라요. 두 기록을 확인해 정리한 뒤 다시 가져와 주세요."
         : response.status === 400
-          ? "비교는 합쳐서 3개, 체크리스트는 200개까지 가능해요. 기록을 정리한 뒤 다시 시도해 주세요."
+          ? "비교 3개·신청 준비 200개·메모 1,000자 한도를 확인한 뒤 다시 시도해 주세요."
           : "계정 기록을 저장하거나 불러오지 못했어요. 연결을 확인하고 다시 시도해 주세요.");
       const value = await response.json();
       if (!current()) return;
@@ -54,7 +57,7 @@ export function createRemotePlanningStore(request: Request) {
   function accept(value: { revision: number; data: Planning }) {
     if (!Number.isSafeInteger(value.revision) || value.revision < 0 || value.data?.version !== 1 || !Array.isArray(value.data.compareIds) || !value.data.checklists)
       throw Error("기록 응답을 확인하지 못했어요. 다시 불러와 주세요.");
-    set({ data: parsePlanning(JSON.stringify(value.data)), revision: value.revision, ready: true });
+    set({ data: parsePlanning(JSON.stringify(value.data)), revision: value.revision, ready: true, applicationsSupported: !!value.data.applications });
   }
   return {
     getSnapshot: () => snapshot,
@@ -69,6 +72,9 @@ export function createRemotePlanningStore(request: Request) {
     },
     importData(data: Planning) {
       if (!snapshot.ready || snapshot.busy || !active) return;
+      if (!snapshot.applicationsSupported && Object.keys(data.applications || {}).length) {
+        set({ message: "계정 기록을 새로고침한 뒤 다시 가져와 주세요. 이 기기의 상태와 메모는 유지돼요." }); return;
+      }
       return run("POST", data, true);
     },
     report(message: string) { set({ message }); },

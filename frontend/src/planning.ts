@@ -21,10 +21,14 @@ export const checklistSteps = [
   },
 ] as const;
 export type StepId = (typeof checklistSteps)[number]["id"];
+export const applicationStatuses = { preparing: "준비 중", submitted: "신청 완료", approved: "선정", rejected: "미선정", withdrawn: "신청 취소" } as const;
+export type ApplicationStatus = keyof typeof applicationStatuses;
+export type ApplicationRecord = { status: ApplicationStatus; note: string };
 export type Planning = {
   version: 1;
   compareIds: string[];
   checklists: Record<string, StepId[]>;
+  applications: Record<string, ApplicationRecord>;
 };
 export const MAX_COMPARE = 3;
 export const MAX_CHECKLISTS = 200;
@@ -36,7 +40,20 @@ const validId = (id: unknown): id is string =>
 const isStep = (id: unknown): id is StepId =>
   checklistSteps.some((step) => step.id === id);
 export function emptyPlanning(): Planning {
-  return { version: 1, compareIds: [], checklists: {} };
+  return { version: 1, compareIds: [], checklists: {}, applications: {} };
+}
+export function trackedIds(state: Planning): string[] {
+  return [...new Set([...Object.keys(state.checklists), ...Object.keys(state.applications || {})])];
+}
+export function sameApplication(a: ApplicationRecord | undefined, b: ApplicationRecord | undefined): boolean {
+  return a?.status === b?.status && a?.note === b?.note;
+}
+export function setApplication(state: Planning, id: string, entry: ApplicationRecord, expected?: ApplicationRecord): Planning {
+  if (!validId(id) || !Object.hasOwn(applicationStatuses, entry.status) || typeof entry.note !== "string" || entry.note.length > 1000)
+    throw Error("신청 상태와 1,000자 이내 메모를 확인해 주세요.");
+  if (!sameApplication(state.applications?.[id], expected)) throw Error("다른 화면에서 상태나 메모가 변경됐어요. 최신 기록을 확인한 뒤 다시 저장해 주세요.");
+  if (!trackedIds(state).includes(id) && trackedIds(state).length >= MAX_CHECKLISTS) throw Error("신청 준비 기록은 최대 200개까지 저장할 수 있어요.");
+  return { ...state, applications: { ...state.applications, [id]: { ...entry } } };
 }
 export function parsePlanning(raw: string | null): Planning {
   try {
@@ -64,7 +81,18 @@ export function parsePlanning(raw: string | null): Planning {
         }
       }
     }
-    return { version: 1, compareIds, checklists };
+    const applications: Planning["applications"] = {};
+    const tracked = new Set(Object.keys(checklists));
+    if(input.applications && typeof input.applications === "object" && !Array.isArray(input.applications)) {
+      for(const [id, raw] of Object.entries(input.applications).slice(0, MAX_CHECKLISTS)) {
+        const entry = raw as ApplicationRecord | null;
+        if(validId(id) && entry && Object.hasOwn(applicationStatuses, entry.status) && typeof entry.note === "string" && entry.note.length <= 1000
+          && (tracked.has(id) || tracked.size < MAX_CHECKLISTS)) {
+          applications[id] = {status: entry.status, note: entry.note}; tracked.add(id);
+        }
+      }
+    }
+    return { version: 1, compareIds, checklists, applications };
   } catch {
     return emptyPlanning();
   }
@@ -88,7 +116,7 @@ export function setChecklistStep(
   if (
     checked &&
     !existing.length &&
-    Object.keys(state.checklists).length >= MAX_CHECKLISTS
+    !state.applications?.[id] && trackedIds(state).length >= MAX_CHECKLISTS
   )
     throw Error(
       "최대 200개 공고를 기록할 수 있어요. 사용하지 않는 공고의 체크를 해제해 주세요.",
@@ -102,7 +130,11 @@ export function setChecklistStep(
   return { ...state, checklists };
 }
 export function planningKey(owner: string) {
-  return `benefit-planning:v1:${owner}`;
+  return `benefit-planning:v2:${owner}`;
+}
+export function readPlanning(storage: Pick<Storage, "getItem"> | null, key: string): Planning {
+  const raw = storage?.getItem(key) ?? storage?.getItem(key.replace("benefit-planning:v2:", "benefit-planning:v1:")) ?? null;
+  return parsePlanning(raw);
 }
 // Explicit imports merge checked steps without replacing existing progress.
 // Refuse over-limit imports instead of dropping the user's selected records.
@@ -112,9 +144,14 @@ export function mergePlanning(existing: Planning, incoming: Planning): Planning 
   for (const [id, steps] of Object.entries(incoming.checklists)) {
     checklists[id] = [...new Set([...(checklists[id] || []), ...steps])];
   }
-  if (compareIds.length > MAX_COMPARE || Object.keys(checklists).length > MAX_CHECKLISTS)
+  const applications = { ...existing.applications };
+  for(const [id, entry] of Object.entries(incoming.applications || {})) {
+    if(applications[id] && !sameApplication(applications[id], entry)) throw Error("같은 공고의 신청 상태나 메모가 달라요. 두 기록을 확인해 정리한 뒤 다시 가져와 주세요.");
+    applications[id] = { ...entry };
+  }
+  if (compareIds.length > MAX_COMPARE || new Set([...Object.keys(checklists), ...Object.keys(applications)]).size > MAX_CHECKLISTS)
     throw Error("비교는 합쳐서 3개, 체크리스트는 200개까지 가능해요. 이 기기의 기록을 정리한 뒤 다시 시도해 주세요.");
-  return { version: 1, compareIds, checklists };
+  return { version: 1, compareIds, checklists, applications };
 }
 type StorageAccess = Pick<Storage, "getItem" | "setItem">;
 export function createPlanningStore(
@@ -124,7 +161,7 @@ export function createPlanningStore(
   let memoryOnly = false;
   const read = () => {
     try {
-      return parsePlanning(storage?.getItem(key) || null);
+      return readPlanning(storage, key);
     } catch {
       memoryOnly = true;
       return emptyPlanning();
@@ -154,12 +191,12 @@ export function createPlanningStore(
       }
     },
     update(change: (state: Planning) => Planning) {
+      let previous = snapshot.data;
       try {
         // Read before writing so changes from another tab are retained.
-        let previous = snapshot.data;
         if (!memoryOnly && storage) {
           try {
-            previous = parsePlanning(storage.getItem(key));
+            previous = readPlanning(storage, key);
           } catch {
             memoryOnly = true;
           }
@@ -177,7 +214,7 @@ export function createPlanningStore(
         }
         snapshot = { data, message };
       } catch (e) {
-        snapshot = { ...snapshot, message: (e as Error).message };
+        snapshot = { ...snapshot, data: previous, message: (e as Error).message };
       }
       emit();
     },

@@ -2442,6 +2442,13 @@ button:disabled {
 .calendar-action { min-width: 0; max-width: 100%; }
 .calendar-action .planning-help { max-width: 360px; margin-bottom: 0; }
 .dialog-actions .calendar-action > button { width: 100%; }
+.application-record { margin-top: 24px; padding-top: 20px; border-top: 1px solid #dce5dd; }
+.application-record fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.application-record label { display: grid; gap: 6px; margin: 12px 0; }
+.application-record select, .application-record textarea { width: 100%; min-width: 0; min-height: 44px; padding: 10px; border: 1px solid #ccd8ce; border-radius: 8px; background: white; color: inherit; font: inherit; }
+.application-record textarea { resize: vertical; }
+.application-note { white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; background: #f4f8f5; border-radius: 8px; }
+.application-status { font-weight: 600; }
 .preparation-filters button[aria-pressed="true"] { background: #e4f2e9; border-color: #247a54; }
 .preparation-list { list-style: none; padding: 0; display: grid; gap: 16px; }
 .preparation-list li { border: 1px solid #e1e7e1; border-radius: 16px; padding: 20px; }

@@ -9,6 +9,37 @@ import org.springframework.web.server.ResponseStatusException;
 import static org.junit.jupiter.api.Assertions.*;
 
 class PlanningTest {
+ @Test void validatesApplicationFieldsAndRejectsConflictingImports(){
+  var entry=new PlanningService.Application("submitted","서류 확인\n문의 완료");
+  var data=new PlanningService.Data(1,List.of(),Map.of(),Map.of("a",entry));
+  assertEquals(data,PlanningService.validate(data));assertEquals(data,PlanningService.merge(data,data));
+  for(var invalid:List.of(new PlanningService.Application("invented",""),new PlanningService.Application("submitted","x".repeat(1001))))
+   assertThrows(ResponseStatusException.class,()->PlanningService.validate(new PlanningService.Data(1,List.of(),Map.of(),Map.of("a",invalid))));
+  var other=new PlanningService.Data(1,List.of(),Map.of(),Map.of("a",new PlanningService.Application("approved","다른 기록")));
+  assertEquals(422,assertThrows(ResponseStatusException.class,()->PlanningService.merge(data,other)).getStatusCode().value());
+  var applications=new HashMap<String,PlanningService.Application>();for(int i=0;i<200;i++) applications.put("a"+i,entry);
+  assertThrows(ResponseStatusException.class,()->PlanningService.validate(new PlanningService.Data(1,List.of(),Map.of("extra",List.of("documents")),applications)));
+ }
+ @Test @EnabledIfEnvironmentVariable(named="TEST_DATABASE_URL",matches=".+")
+ void notesSurviveOldClientsAndRemainIsolatedAcrossAccounts() throws Exception {try(var db=new TestDatabase()){
+  var mapper=new ObjectMapper();var service=new PlanningService(db.jdbc,mapper);
+  UUID alice=UUID.randomUUID(),bob=UUID.randomUUID();
+  var entry=new PlanningService.Application("submitted","개인 메모 <script>text only</script>");
+  var data=new PlanningService.Data(1,List.of(),Map.of(),Map.of("a",entry));
+  service.save(alice,new PlanningService.Update(0,data));
+  assertEquals(data,new PlanningService(db.jdbc,mapper).get(alice).data());
+  assertTrue(service.get(bob).data().applications().isEmpty());
+  var legacy=mapper.readValue("{\"version\":1,\"compareIds\":[\"b\"],\"checklists\":{\"b\":[\"documents\"]}}",PlanningService.Data.class);
+  assertNull(legacy.applications());
+  service.save(alice,new PlanningService.Update(1,legacy));
+  assertEquals(entry,service.get(alice).data().applications().get("a"));
+  assertEquals(409,assertThrows(ResponseStatusException.class,()->service.save(alice,new PlanningService.Update(1,PlanningService.empty()))).getStatusCode().value());
+  var conflict=new PlanningService.Data(1,List.of("extra"),Map.of(),Map.of("a",new PlanningService.Application("approved","새 메모")));
+  assertEquals(422,assertThrows(ResponseStatusException.class,()->service.importData(alice,conflict)).getStatusCode().value());
+  assertEquals(List.of("b"),service.get(alice).data().compareIds());
+  service.save(alice,new PlanningService.Update(2,PlanningService.empty()));
+  assertTrue(service.get(alice).data().applications().isEmpty());
+ }}
  @Test void importsMergeProgressWithoutDroppingOrDuplicatingRecords(){
   var first=new PlanningService.Data(1,List.of("a"),Map.of("a",List.of("eligibility")));
   var incoming=new PlanningService.Data(1,List.of("a","b"),Map.of("a",List.of("documents")));

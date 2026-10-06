@@ -11,17 +11,21 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service @Profile("prod")
 public class PlanningService {
- public record Data(int version, List<String> compareIds, Map<String,List<String>> checklists) {}
+ public record Application(String status,String note) {}
+ public record Data(int version, List<String> compareIds, Map<String,List<String>> checklists,Map<String,Application> applications) {
+  public Data(int version,List<String> compareIds,Map<String,List<String>> checklists){this(version,compareIds,checklists,Map.of());}
+ }
  public record Snapshot(long revision, Data data) {}
  public record Update(long revision, Data data) {}
  private static final Set<String> STEPS=Set.of("eligibility","documents","schedule","submitted");
+ private static final Set<String> STATUSES=Set.of("preparing","submitted","approved","rejected","withdrawn");
  private final JdbcClient jdbc;
  private final ObjectMapper mapper;
  public PlanningService(JdbcClient jdbc,ObjectMapper mapper){this.jdbc=jdbc;this.mapper=mapper;}
  public static Data empty(){return new Data(1,List.of(),Map.of());}
  private static boolean validId(String id){return id!=null && !id.isBlank() && id.length()<=100 && !Set.of("__proto__","constructor","prototype").contains(id);}
  public static Data validate(Data data){
-  if(data==null || data.version()!=1 || data.compareIds()==null || data.checklists()==null || data.compareIds().size()>3 || data.checklists().size()>200)
+  if(data==null || data.version()!=1 || data.compareIds()==null || data.checklists()==null || data.compareIds().size()>3 || data.checklists().size()>200 || (data.applications()!=null && data.applications().size()>200))
    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"비교는 3개, 체크리스트는 200개까지 저장할 수 있어요.");
   if(data.compareIds().stream().anyMatch(id->!validId(id))) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
   var checks=new LinkedHashMap<String,List<String>>();
@@ -29,14 +33,28 @@ public class PlanningService {
    if(!validId(id) || steps==null || steps.size()>4 || steps.stream().anyMatch(step->step==null || !STEPS.contains(step))) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
    if(!steps.isEmpty()) checks.put(id,List.copyOf(new LinkedHashSet<>(steps)));
   });
-  return new Data(1,List.copyOf(new LinkedHashSet<>(data.compareIds())),Collections.unmodifiableMap(checks));
+  var applications=new LinkedHashMap<String,Application>();
+  if(data.applications()!=null) data.applications().forEach((id,entry)->{
+   if(!validId(id) || entry==null || entry.status()==null || !STATUSES.contains(entry.status()) || entry.note()==null || entry.note().length()>1000)
+    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"신청 상태와 1,000자 이내 메모를 확인해 주세요.");
+   applications.put(id,entry);
+  });
+  var tracked=new HashSet<>(checks.keySet());tracked.addAll(applications.keySet());
+  if(tracked.size()>200) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"신청 준비 기록은 최대 200개까지 저장할 수 있어요.");
+  return new Data(1,List.copyOf(new LinkedHashSet<>(data.compareIds())),Collections.unmodifiableMap(checks),Collections.unmodifiableMap(applications));
  }
  public static Data merge(Data existing,Data incoming){
   existing=validate(existing);incoming=validate(incoming);
   var ids=new LinkedHashSet<>(existing.compareIds());ids.addAll(incoming.compareIds());
   var checks=new LinkedHashMap<>(existing.checklists());
   incoming.checklists().forEach((id,steps)->{var union=new LinkedHashSet<>(checks.getOrDefault(id,List.of()));union.addAll(steps);checks.put(id,List.copyOf(union));});
-  return validate(new Data(1,List.copyOf(ids),checks));
+  var applications=new LinkedHashMap<>(existing.applications());
+  incoming.applications().forEach((id,entry)->{
+   if(applications.containsKey(id) && !applications.get(id).equals(entry))
+    throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,"같은 공고의 신청 상태나 메모가 달라요. 두 기록을 확인해 정리한 뒤 다시 가져와 주세요.");
+   applications.put(id,entry);
+  });
+  return validate(new Data(1,List.copyOf(ids),checks,applications));
  }
  private void ensure(UUID user){
   jdbc.sql("INSERT INTO member_profile(user_id) VALUES(:u) ON CONFLICT DO NOTHING").param("u",user).update();
@@ -46,12 +64,18 @@ public class PlanningService {
   return jdbc.sql("SELECT revision,data FROM member_planning WHERE user_id=:u"+(lock?" FOR UPDATE":"")).param("u",user)
    .query((r,n)->new Snapshot(r.getLong("revision"),decode(r.getString("data")))).single();
  }
- private Data decode(String raw){try{return mapper.readValue(raw,Data.class);}catch(Exception e){throw new IllegalStateException("planning_deserialization_failed",e);}}
+ private Data decode(String raw){try{return validate(mapper.readValue(raw,Data.class));}catch(Exception e){throw new IllegalStateException("planning_deserialization_failed",e);}}
  public Snapshot get(UUID user){ensure(user);return read(user,false);}
  private String json(Data data){try{return mapper.writeValueAsString(data);}catch(Exception e){throw new IllegalStateException("planning_serialization_failed",e);}}
  public Snapshot save(UUID user,Update input){
   if(input==null || input.revision()<0) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
   Data data=validate(input.data());ensure(user);
+  // Older clients omit applications. Preserve them while retaining the revision check.
+  if(input.data().applications()==null) {
+   Snapshot current=read(user,false);
+   if(current.revision()!=input.revision()) throw new ResponseStatusException(HttpStatus.CONFLICT);
+   data=validate(new Data(data.version(),data.compareIds(),data.checklists(),current.data().applications()));
+  }
   int updated=jdbc.sql("UPDATE member_planning SET data=CAST(:data AS jsonb),revision=revision+1,updated_at=now() WHERE user_id=:u AND revision=:revision")
    .param("data",json(data)).param("u",user).param("revision",input.revision()).update();
   if(updated==0) throw new ResponseStatusException(HttpStatus.CONFLICT,"다른 기기에서 기록이 변경됐어요. 최신 기록을 확인한 뒤 다시 시도해 주세요.");
