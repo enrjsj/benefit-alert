@@ -104,6 +104,18 @@ export function setChecklistStep(
 export function planningKey(owner: string) {
   return `benefit-planning:v1:${owner}`;
 }
+// Explicit imports merge checked steps without replacing existing progress.
+// Refuse over-limit imports instead of dropping the user's selected records.
+export function mergePlanning(existing: Planning, incoming: Planning): Planning {
+  const compareIds = [...new Set([...existing.compareIds, ...incoming.compareIds])];
+  const checklists = { ...existing.checklists };
+  for (const [id, steps] of Object.entries(incoming.checklists)) {
+    checklists[id] = [...new Set([...(checklists[id] || []), ...steps])];
+  }
+  if (compareIds.length > MAX_COMPARE || Object.keys(checklists).length > MAX_CHECKLISTS)
+    throw Error("비교는 합쳐서 3개, 체크리스트는 200개까지 가능해요. 이 기기의 기록을 정리한 뒤 다시 시도해 주세요.");
+  return { version: 1, compareIds, checklists };
+}
 type StorageAccess = Pick<Storage, "getItem" | "setItem">;
 export function createPlanningStore(
   storage: StorageAccess | null,

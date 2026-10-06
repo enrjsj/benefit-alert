@@ -2,6 +2,7 @@ import { StrictMode, useEffect, useRef, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import "./style.css";
 import type { Benefit } from "./benefit";
+import { PreparationDialog } from "./PreparationDialog";
 import {
   usePlanning,
   ApplicationChecklist,
@@ -179,11 +180,13 @@ function App() {
   const account = useAccount();
   const saved = account.saved;
   const planningOwner = account.session?.user.id || "guest";
-  const planning = usePlanning(planningOwner);
+  const planning = usePlanning(planningOwner, account.session?.access_token);
+  const [preparationOwner, setPreparationOwner] = useState<string | null>(null);
   const [comparisonOwner, setComparisonOwner] = useState<string | null>(null);
   const comparisonOpen = comparisonOwner === planningOwner;
   useEffect(() => {
     setComparisonOwner(null);
+    setPreparationOwner(null);
   }, [planningOwner]);
   useEffect(() => {
     if (planning.message) setNotice(planning.message);
@@ -489,6 +492,9 @@ function App() {
               {account.session
                 ? `내 계정${account.alerts.some((n) => !n.read) ? " · 새 알림" : ""}`
                 : "로그인"}
+            </button>
+            <button onClick={() => setPreparationOwner(planningOwner)}>
+              신청 준비 <span className="nav-count">{Object.keys(planning.data.checklists).length}</span>
             </button>
           </nav>
           <span className="header-caption">
@@ -854,6 +860,7 @@ function App() {
                       <button
                         className="compare-toggle"
                         aria-pressed={planning.data.compareIds.includes(b.id)}
+                        disabled={planning.busy || !planning.ready}
                         onClick={() => planning.toggle(b.id)}
                         aria-label={`${b.title} ${planning.data.compareIds.includes(b.id) ? "비교에서 빼기" : "비교 담기"}`}
                       >
@@ -1119,6 +1126,7 @@ function App() {
               <button
                 className="secondary-button"
                 aria-pressed={planning.data.compareIds.includes(selected.id)}
+                disabled={planning.busy || !planning.ready}
                 onClick={() => planning.toggle(selected.id)}
               >
                 {planning.data.compareIds.includes(selected.id)
@@ -1151,6 +1159,11 @@ function App() {
           </>
         )}
       </dialog>
+      {preparationOwner === planningOwner && (
+        <PreparationDialog key={planningOwner} planning={planning}
+          onClose={() => setPreparationOwner(null)}
+          onDetail={(id) => { setPreparationOwner(null); openDetail(id); }} />
+      )}
       {comparisonOpen && (
         <ComparisonDialog
           key={planningOwner}
@@ -1171,7 +1184,7 @@ function App() {
             </strong>
             <small>페이지를 이동해도 선택은 유지돼요</small>
           </div>
-          <button className="dock-clear" onClick={planning.clearCompare}>
+          <button className="dock-clear" disabled={planning.busy || !planning.ready} onClick={planning.clearCompare}>
             비우기
           </button>
           <button

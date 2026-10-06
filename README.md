@@ -15,6 +15,7 @@ React 19 + Vite + TypeScript / Java 21 + Spring Boot / PostgreSQL 지원금 탐�
 - 비회원 관심목록(브라우저 최대 100개), 회원 관심목록(계정 최대 500개)
 - 최대 3개 혜택 비교: 지원 대상·내용·기간·방법·제공 기관·신청 준비 진행률
 - 공고별 신청 체크리스트: 자격 확인, 서류 준비, 기간·접수 방법 확인, 직접 신청 후 접수 확인
+- 회원 비교·체크리스트 계정 동기화, 이 기기 기록 가져오기, 신청 준비 목록·진행 상태 필터
 - Supabase 이메일 가입·인증·로그인·비밀번호 재설정, 계정별 관심 지역·분야
 - 선택한 조건의 최근 7일 새 공고와 저장한 공고의 7일 이내 마감을 사이트 알림함에서 확인
 - 정부24 공공서비스 목록 수집, 원본 JSON 보관, 중복 갱신, 실행 기록
@@ -25,7 +26,11 @@ React 19 + Vite + TypeScript / Java 21 + Spring Boot / PostgreSQL 지원금 탐�
 
 공고 카드의 **비교 담기**로 최대 3개를 고른 뒤 하단 **비교하기**를 누릅니다. 검색 조건과 페이지를 바꿔도 선택을 유지하며, 비교할 때 API에서 최신 공고를 다시 조회합니다. 더 이상 제공되지 않는 공고는 안내 후 개별 제거할 수 있습니다. 비교표의 **상세·신청 준비**를 누르면 공고별 체크리스트로 이어집니다.
 
-체크리스트는 사용자가 직접 확인한 사항을 표시하는 메모입니다. 자동 신청, 접수 확인 또는 자격 판정이 아닙니다. 비교 선택과 체크리스트는 **현재 기기의 브라우저에만 저장**되며 서버 동기화하지 않습니다. 로그인한 사용자와 비회원의 기록을 분리하고, 로그아웃하면 비회원 기록으로 돌아갑니다. 브라우저 데이터 삭제 시 사라집니다. 최대 200개 공고의 체크 상태를 보관하며, 저장소 사용이 차단된 경우 화면에서 이번 방문에만 기억된다고 안내합니다.
+체크리스트는 사용자가 직접 확인한 사항을 표시하는 메모입니다. 자동 신청, 접수 확인 또는 자격 판정이 아닙니다. **회원 비교 선택·체크리스트는 계정에 저장**하여 다른 기기에서도 이어갈 수 있고, 비회원 기록은 현재 브라우저에 저장합니다. 로그아웃하면 비회원 기록으로 돌아갑니다. 비회원 기록은 브라우저 데이터 삭제 시 사라지며, 저장소 사용이 차단되면 이번 방문에만 기억된다고 안내합니다. 최대 200개 공고의 체크 상태를 보관합니다.
+
+상단 **신청 준비**에서 진행 중·확인 완료 공고를 모아 보고 준비를 이어가거나 기록을 삭제합니다. 더 이상 제공되지 않는 공고의 기록도 보관하며 개별 삭제할 수 있습니다. 확인 완료는 체크 항목을 모두 기록했다는 뜻입니다.
+
+로그인 후 신청 준비 화면에서 **이 기기 기록 가져오기**를 누르면 비회원 기록과 이전 버전에서 이 계정으로 브라우저에 저장한 기록을 서버 기록에 합칩니다. 기존 체크 항목을 유지하고 중복을 제거합니다. 가져오기 후 브라우저 원본은 유지합니다. 합쳐서 비교 3개·체크리스트 200개를 초과하면 저장하지 않고 정리 후 다시 시도하도록 안내합니다. 여러 기기가 동시에 수정하면 서버의 최신 기록을 불러오고 변경을 다시 선택하도록 안내하여 덮어쓰기를 막습니다. 저장 실패 시 확인된 기록을 유지하고 오류를 알립니다.
 
 ## 나중에 키를 연결하는 방법
 
@@ -40,7 +45,7 @@ React 19 + Vite + TypeScript / Java 21 + Spring Boot / PostgreSQL 지원금 탐�
 
 Supabase Authentication → URL Configuration에서 Site URL을 `https://benefit-alert.vercel.app`로, Redirect URLs에 `https://benefit-alert.vercel.app/`를 설정합니다. 이메일 가입/인증 기능을 활성화하고 서비스 규모에 맞게 인증 메일 발송 설정을 구성합니다. 비밀번호는 8자 이상을 사용합니다.
 
-백엔드는 Supabase `/auth/v1/user`에서 토큰과 이메일 인증 여부를 확인한 사용자 ID만 사용합니다. `member_profile`, `member_saved`, `member_notification`에는 RLS가 활성화되어 있으며 브라우저가 DB에 직접 접근하지 않습니다. 계정 API는 `Cache-Control: no-store`입니다.
+백엔드는 Supabase `/auth/v1/user`에서 토큰과 이메일 인증 여부를 확인한 사용자 ID만 사용합니다. `member_profile`, `member_saved`, `member_notification`, `member_planning`에는 RLS가 활성화되어 있으며 브라우저가 DB에 직접 접근하지 않습니다. 계정 API는 `Cache-Control: no-store`입니다.
 
 **실제 키를 넣은 후 해야 할 확인:** 정부 API 승인·응답 필드와 첫 수집 성공, 회원 인증 메일 도착·가입·로그인·비밀번호 재설정. 키 없이 실행하는 테스트는 실제 외부 서비스의 승인을 검증하지 않습니다.
 
@@ -67,7 +72,7 @@ SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE=3
 SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE=1
 ```
 
-Flyway V2는 공고 수집 메타데이터와 회원별 테이블을 추가합니다. prod에 예시 공고를 넣지 않습니다. 청약 프로젝트와 해당 프로젝트의 DB·배포 설정은 변경하지 않습니다.
+Flyway V2는 공고 수집 메타데이터와 회원별 테이블, V3는 계정별 신청 준비 기록과 동시 수정 확인용 revision을 추가합니다. 기존 서버 배포 시 자동 마이그레이션합니다. prod에 예시 공고를 넣지 않습니다. 청약 프로젝트와 해당 프로젝트의 DB·배포 설정은 변경하지 않습니다.
 
 ## 로컬 실행과 검증
 
@@ -114,6 +119,9 @@ GitHub Actions도 PostgreSQL 통합 테스트를 실행합니다. 테스트 항�
 - `GET|POST /api/account/saved`: POST body `{"ids":["공고 ID"]}`
 - `DELETE /api/account/saved/{id}`
 - `GET /api/account/notifications`, `PUT /api/account/notifications/{id}/read`
+- `GET /api/account/planning`: `{revision,data:{version:1,compareIds,checklists}}`
+- `PUT /api/account/planning`: 위 응답 형식으로 저장. revision 충돌은 409이며 최신 기록을 다시 조회해야 함
+- `POST /api/account/planning/import`: `{version:1,compareIds,checklists}`를 기존 기록과 합침
 - `GET /api/health`: 프로세스 생존 확인(DB 연결 보장은 아님)
 
 회원 API는 prod에서만 제공하며 모든 요청에 Bearer 토큰이 필요합니다. Vercel의 `frontend/vercel.json`이 `/api`를 Render로 전달합니다. GitHub 푸시는 Vercel 배포를 시작합니다. Render Git 연결 상태에 따라 수동 배포가 필요할 수 있습니다.

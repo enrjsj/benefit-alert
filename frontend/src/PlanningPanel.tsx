@@ -6,36 +6,80 @@ import {
   useSyncExternalStore,
 } from "react";
 import type { Benefit } from "./benefit";
+import { createRemotePlanningStore } from "./remotePlanning";
 import {
   checklistSteps,
   createPlanningStore,
   planningKey,
   setChecklistStep,
   toggleCompare,
+  parsePlanning,
+  mergePlanning,
+  type Planning,
   type StepId,
 } from "./planning";
 const base = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
-export function usePlanning(owner: string) {
+type PlannerStore = {
+  getSnapshot: () => { data: Planning; message: string; busy?: boolean; ready?: boolean };
+  subscribe: (fn: () => void) => () => void;
+  reload: () => void | Promise<void>;
+  update: (change: (data: Planning) => Planning) => void | Promise<void>;
+  start?: () => void;
+  stop?: () => void;
+  importData?: (data: Planning) => void | Promise<void>;
+  report?: (message: string) => void;
+};
+export function usePlanning(owner: string, token?: string) {
   const key = planningKey(owner);
-  const store = useMemo(() => {
+  const store = useMemo<PlannerStore>(() => {
     let storage: Storage | null = null;
     try {
       storage = window.localStorage;
     } catch {
       /* Private/restricted browsers still get in-memory planning. */
     }
-    return createPlanningStore(storage, key);
-  }, [key]);
+    if (!token) return createPlanningStore(storage, key);
+    return createRemotePlanningStore((method, body, signal, importing) =>
+      fetch(`${base}/api/account/planning${importing ? "/import" : ""}`, {
+        method, signal, cache: "no-store",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      }));
+  }, [key, token]);
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot);
   useEffect(() => {
+    store.start?.();
     const sync = (event: StorageEvent) => {
       if (event.key === key || event.key === null) store.reload();
     };
     addEventListener("storage", sync);
-    return () => removeEventListener("storage", sync);
+    const focus = () => { if (store.start) void store.reload(); };
+    addEventListener("focus", focus);
+    return () => {
+      removeEventListener("storage", sync);
+      removeEventListener("focus", focus);
+      store.stop?.();
+    };
   }, [store, key]);
   return {
     ...snapshot,
+    account: !!token,
+    busy: snapshot.busy ?? false,
+    ready: snapshot.ready ?? true,
+    refresh: () => store.reload(),
+    importLocal: () => {
+      if (!store.importData) return;
+      try {
+        const guest = parsePlanning(localStorage.getItem(planningKey("guest")));
+        const legacy = parsePlanning(localStorage.getItem(key));
+        void store.importData(mergePlanning(legacy, guest));
+      } catch (error) { store.report?.((error as Error).message); }
+    },
+    removeChecklist: (id: string) => store.update((s: Planning) => {
+      const checklists = { ...s.checklists };
+      delete checklists[id];
+      return { ...s, checklists };
+    }),
     toggle: (id: string) => store.update((s) => toggleCompare(s, id)),
     clearCompare: () => store.update((s) => ({ ...s, compareIds: [] })),
     check: (id: string, step: StepId, checked: boolean) =>
@@ -63,15 +107,15 @@ export function ApplicationChecklist({
         </span>
       </div>
       <p className="planning-help">
-        직접 확인한 항목에 체크해 주세요. 이 브라우저에만 저장되며, 실제
-        신청·접수 상태와 자동 연동되지 않아요.
+        직접 확인한 항목에 체크해 주세요. {planning.account ? "계정에 저장되어 다른 기기에서도 확인할 수 있어요." : "이 브라우저에만 저장돼요."}
+        실제 신청·접수 상태와 자동 연동되지 않아요.
       </p>
       <progress
         value={checked.length}
         max={checklistSteps.length}
         aria-label="신청 체크리스트 진행률"
       />
-      <fieldset>
+      <fieldset disabled={planning.busy || !planning.ready}>
         <legend className="sr-only">공고별 신청 준비 항목</legend>
         {checklistSteps.map((step) => (
           <label
@@ -230,6 +274,7 @@ export function ComparisonDialog({
                 <button
                   key={id}
                   className="text-button"
+                  disabled={planning.busy || !planning.ready}
                   onClick={() => planning.toggle(id)}
                 >
                   조회할 수 없는 공고 {n + 1} 빼기
@@ -263,6 +308,7 @@ export function ComparisonDialog({
                           <h3>{b.title}</h3>
                           <button
                             className="text-button"
+                            disabled={planning.busy || !planning.ready}
                             onClick={() => planning.toggle(b.id)}
                             aria-label={`${b.title} 비교에서 빼기`}
                           >

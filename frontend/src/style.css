@@ -2430,3 +2430,15 @@ button:disabled {
   z-index: 1;
   box-shadow: 1px 0 0 #dfe6d8;
 }
+/* Application preparation overview shares the existing dialog language. */
+.preparation-dialog { width: min(760px, calc(100vw - 32px)); }
+.preparation-sync { background: #f5f8f5; padding: 16px; border-radius: 14px; margin: 20px 0; }
+.preparation-sync p { margin: 0 0 12px; }
+.preparation-actions, .preparation-filters { display: flex; gap: 10px; flex-wrap: wrap; }
+.preparation-filters { margin-bottom: 20px; }
+.preparation-filters button[aria-pressed="true"] { background: #e4f2e9; border-color: #247a54; }
+.preparation-list { list-style: none; padding: 0; display: grid; gap: 16px; }
+.preparation-list li { border: 1px solid #e1e7e1; border-radius: 16px; padding: 20px; }
+.preparation-list h3 { margin: 12px 0; }
+.preparation-list p { color: #607064; overflow-wrap: anywhere; }
+.preparation-list progress { width: 100%; margin: 8px 0 16px; accent-color: #247a54; }
