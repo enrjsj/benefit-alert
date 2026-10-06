@@ -2442,3 +2442,22 @@ button:disabled {
 .preparation-list h3 { margin: 12px 0; }
 .preparation-list p { color: #607064; overflow-wrap: anywhere; }
 .preparation-list progress { width: 100%; margin: 8px 0 16px; accent-color: #247a54; }
+.search-panel.unified-search {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.8fr) minmax(140px, 0.8fr) minmax(200px, 1.8fr) auto;
+  gap: 20px;
+}
+.unified-search .region-field, .unified-search .category-field { width: auto; min-width: 0; }
+.unified-search .category-field select {
+  width: 100%; border: 0; background: #fff; color: #344639;
+  font-size: 14px; font-weight: 600; padding: 0 12px 0 0; height: 27px;
+}
+.unified-search .field-label { font-size: 12px; margin-bottom: 8px; }
+@media (max-width: 760px) {
+  .search-panel.unified-search { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+  .unified-search .region-field { display: block; }
+  .unified-search .region-field select, .unified-search .category-field select { width: 100%; max-width: 100%; font-size: 14px; }
+  .unified-search .region-field .field-label, .unified-search .keyword-field .field-label { display: flex; margin-bottom: 8px; }
+  .unified-search .keyword-field { grid-column: 1 / -1; }
+  .unified-search .search-submit { grid-column: 1 / -1; width: 100%; }
+}

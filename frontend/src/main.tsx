@@ -136,13 +136,6 @@ function Brand() {
     </span>
   );
 }
-const categories: { name: string; icon: IconName; description: string }[] = [
-  { name: "전체", icon: "grid", description: "모든 혜택 둘러보기" },
-  { name: "주거", icon: "home", description: "내 공간을 위한 지원" },
-  { name: "취업", icon: "work", description: "새로운 시작의 기회" },
-  { name: "생활", icon: "wallet", description: "일상에 보탬이 되는" },
-  { name: "가족", icon: "family", description: "함께하는 삶을 위한" },
-];
 const regions = [
   "전체",
   "서울",
@@ -564,7 +557,7 @@ function App() {
           </div>
         </section>
         <form
-          className="search-panel"
+          className="search-panel unified-search"
           onSubmit={(e) => {
             e.preventDefault();
             goToResults();
@@ -574,7 +567,7 @@ function App() {
           <label className="region-field">
             <span className="field-label">
               <Icon name="pin" />
-              어디에 살고 계신가요?
+              지역
             </span>
             <select
               aria-label="거주 지역"
@@ -588,9 +581,15 @@ function App() {
               ))}
             </select>
           </label>
-          <div className="search-divider" />
+          <label className="category-field">
+            <span className="field-label"><Icon name="grid" />지원 분야</span>
+            <select aria-label="지원 분야" value={category}
+              onChange={(e) => setCategory(e.target.value)}>
+              {accountCategories.map((c) => <option key={c} value={c}>{c === "전체" ? "모든 분야" : c}</option>)}
+            </select>
+          </label>
           <label className="keyword-field">
-            <span className="field-label">어떤 도움이 필요하세요?</span>
+            <span className="field-label">검색어</span>
             <span className="input-wrap">
               <Icon name="search" />
               <input
@@ -608,33 +607,6 @@ function App() {
             혜택 찾기 <Icon name="arrow" />
           </button>
         </form>
-        <section className="category-section" aria-label="분야별 혜택">
-          <div className="category-heading">
-            <h2>어떤 혜택을 찾으세요?</h2>
-            <span>관심 있는 분야를 선택해 보세요</span>
-          </div>
-          <div className="category-list">
-            {categories.map((c) => (
-              <button
-                key={c.name}
-                className={`category-button ${category === c.name ? "selected" : ""}`}
-                aria-pressed={category === c.name}
-                onClick={() => setCategory(c.name)}
-              >
-                <span className={`category-icon category-${c.icon}`}>
-                  <Icon name={c.icon} />
-                </span>
-                <span>
-                  <strong>{c.name === "전체" ? "전체 혜택" : c.name}</strong>
-                  <small>{c.description}</small>
-                </span>
-                {category === c.name && (
-                  <Icon name="check" className="category-check" />
-                )}
-              </button>
-            ))}
-          </div>
-        </section>
         {demo && (
           <div className="demo-banner" role="status">
             <Icon name="info" />
@@ -688,18 +660,6 @@ function App() {
               </button>
             </div>
             <div className="filter-toolbar">
-              <label className="extra-category">
-                <span className="sr-only">모든 지원 분야</span>
-                <select
-                  aria-label="모든 지원 분야"
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                >
-                  {accountCategories.map((c) => (
-                    <option key={c}>{c}</option>
-                  ))}
-                </select>
-              </label>
               <label className="check">
                 <input
                   type="checkbox"
