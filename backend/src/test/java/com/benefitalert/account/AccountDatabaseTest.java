@@ -14,8 +14,9 @@ class AccountDatabaseTest {
   var alerts=a.notifications(alice);assertEquals(3,alerts.size());assertEquals(3,a.notifications(alice).size());assertTrue(a.notifications(bob).isEmpty());
   long id=alerts.getFirst().id();a.read(bob,id);assertFalse(a.notifications(alice).stream().filter(n->n.id()==id).findFirst().orElseThrow().read());a.read(alice,id);assertTrue(a.notifications(alice).stream().filter(n->n.id()==id).findFirst().orElseThrow().read());
   var repo=new PostgresBenefitRepository(db.jdbc);
-  var page=repo.search(new BenefitSearch("","서울","주거",true,1,1,"deadline",null,null));assertEquals(2,page.total());assertEquals("seoul",page.items().getFirst().id());
-  assertEquals("national",repo.search(new BenefitSearch("","서울","주거",true,2,1,"deadline",null,null)).items().getFirst().id());
+  var page=repo.search(new BenefitSearch("","서울","주거",true,1,1,"deadline",null,null));assertEquals(1,page.total());assertEquals("seoul",page.items().getFirst().id());
+  assertTrue(repo.search(new BenefitSearch("","서울","주거",true,2,1,"deadline",null,null)).items().isEmpty());
+  assertEquals(2,repo.search(new BenefitSearch("","전체","주거",true,1,12,"deadline",null,null)).total());
   assertEquals(0,repo.search(new BenefitSearch("%","전체","전체",false,1,12,"default",null,null)).total());
   assertEquals("seoul",repo.search(new BenefitSearch("","전체","전체",false,1,12,"default",null,alice)).items().getFirst().id());
   assertThrows(org.springframework.web.server.ResponseStatusException.class,()->a.update(alice,new AccountService.Preferences(null,"전체",false)));

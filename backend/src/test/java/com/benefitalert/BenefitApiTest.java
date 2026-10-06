@@ -11,7 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class BenefitApiTest {
  @Autowired MockMvc mvc;
  @Test void demoList() throws Exception {mvc.perform(get("/api/benefits")).andExpect(status().isOk()).andExpect(jsonPath("$.demo").value(true)).andExpect(jsonPath("$.items.length()").value(4));}
- @Test void regionFilter() throws Exception {mvc.perform(get("/api/benefits").param("region","서울")).andExpect(status().isOk()).andExpect(jsonPath("$.items.length()").value(3));}
+ @Test void regionFilter() throws Exception {mvc.perform(get("/api/benefits").param("region","서울")).andExpect(status().isOk()).andExpect(jsonPath("$.items.length()").value(1));}
  @Test void invalidSearchAndPrivateConfiguration() throws Exception {
   mvc.perform(get("/api/benefits").param("page","0")).andExpect(status().isBadRequest());
   mvc.perform(get("/api/benefits").param("sort","id;drop table benefit")).andExpect(status().isBadRequest());

@@ -23,10 +23,10 @@ public class PostgresBenefitRepository implements BenefitRepository {
   StringBuilder where = new StringBuilder(" WHERE b.active");
   Map<String,Object> p = new HashMap<>();
   if (!s.q().isEmpty()) { where.append(" AND position(:q in lower(concat_ws(' ', b.title, b.summary, b.organization, b.eligibility))) > 0"); p.put("q", s.q().toLowerCase(Locale.ROOT)); }
-  if (!s.region().equals("전체")) { where.append(" AND b.region IN ('전국', :region)"); p.put("region", s.region()); }
+  if (!s.region().equals("전체")) { where.append(" AND b.region=:region"); p.put("region", s.region()); }
   if(!s.district().isEmpty()) {
    String district=RegionScope.SQL_DISTRICT;
-   where.append(" AND (b.region='전국' OR "+district+" IS NULL OR "+district+"=:district OR "+district+" LIKE :district || ' %' OR :district LIKE "+district+" || ' %')");
+   where.append(" AND ("+district+" IS NULL OR "+district+"=:district OR "+district+" LIKE :district || ' %' OR :district LIKE "+district+" || ' %')");
    p.put("district",s.district());
   }
   if (!s.category().equals("전체")) { where.append(" AND b.category=:category"); p.put("category", s.category()); }

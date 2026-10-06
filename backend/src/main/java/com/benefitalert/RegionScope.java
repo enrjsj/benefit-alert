@@ -16,7 +16,8 @@ public final class RegionScope {
   return match.find()?match.group(1):"";
  }
  public static boolean matches(Benefit b,String district) {
-  if(district.isEmpty() || b.region().equals("전국")) return true;
+  if(district.isEmpty()) return true;
+  if(b.region().equals("전국")) return false;
   String provider=district(b.organization());
   return provider.isEmpty() || provider.equals(district) || provider.startsWith(district+" ") || district.startsWith(provider+" ");
  }

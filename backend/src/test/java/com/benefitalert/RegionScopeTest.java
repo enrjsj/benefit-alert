@@ -27,18 +27,20 @@ class RegionScopeTest {
   seed(db,"school","서울","서울특별시교육청");
   seed(db,"suwon","경기","경기도 수원시");seed(db,"yeongtong","경기","경기도 수원시 영통구");seed(db,"paldal","경기","경기도 수원시 팔달구");
   var repo=new PostgresBenefitRepository(db.jdbc);
-  assertEquals(Set.of("national","province","school","gangnam"),ids(repo.search(search("서울","강남구"))));
+  assertEquals(8,repo.search(search("전체","")).total());
+  assertEquals(Set.of("province","school","gangnam","songpa"),ids(repo.search(search("서울",""))));
+  assertEquals(Set.of("province","school","gangnam"),ids(repo.search(search("서울","강남구"))));
   assertEquals(List.of("강남구","송파구"),repo.districts("서울"));
   assertEquals(List.of("수원시","수원시 영통구","수원시 팔달구"),repo.districts("경기"));
-  assertEquals(Set.of("national","suwon","yeongtong"),ids(repo.search(search("경기","수원시 영통구"))));
-  assertEquals(Set.of("national","suwon","yeongtong","paldal"),ids(repo.search(search("경기","수원시"))));
+  assertEquals(Set.of("suwon","yeongtong"),ids(repo.search(search("경기","수원시 영통구"))));
+  assertEquals(Set.of("suwon","yeongtong","paldal"),ids(repo.search(search("경기","수원시"))));
   var rows=repo.findAll();BenefitRepository memory=()->rows;
   assertEquals(ids(repo.search(search("경기","수원시 영통구"))),ids(memory.search(search("경기","수원시 영통구"))));
   assertEquals(0,repo.search(new BenefitSearch("","서울","전체",false,1,12,"default",List.of("songpa"),null,"강남구")).total());
   var mvc=org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(new BenefitController(repo,new MockEnvironment())).build();
   mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/benefits").param("region","서울").param("district","강남구"))
    .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk())
-   .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.total").value(4));
+   .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.total").value(3));
   assertTrue(new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules().writeValueAsString(repo.findById("gangnam").get()).contains("\"district\":\"강남구\""));
  }}
  private BenefitSearch search(String region,String district){return new BenefitSearch("",region,"전체",false,1,100,"default",null,null,district);}

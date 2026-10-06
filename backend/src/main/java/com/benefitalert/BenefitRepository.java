@@ -15,7 +15,7 @@ public interface BenefitRepository {
  default BenefitPage search(BenefitSearch s) {
   var filtered = findAll().stream()
    .filter(b -> s.q().isEmpty() || (b.title()+" "+b.summary()+" "+b.organization()+" "+b.eligibility()).toLowerCase(Locale.ROOT).contains(s.q().toLowerCase(Locale.ROOT)))
-   .filter(b -> s.region().equals("전체") || b.region().equals("전국") || b.region().equals(s.region()))
+   .filter(b -> s.region().equals("전체") || b.region().equals(s.region()))
    .filter(b -> RegionScope.matches(b,s.district()))
    .filter(b -> s.category().equals("전체") || b.category().equals(s.category()))
    .filter(b -> !s.openOnly() || b.deadline() == null || !b.deadline().isBefore(s.today()))
