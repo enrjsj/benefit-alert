@@ -9,10 +9,14 @@ public interface BenefitRepository {
  default Optional<Benefit> findById(String id) {
   return findAll().stream().filter(b -> b.id().equals(id)).findFirst();
  }
+ default List<String> districts(String region) {
+  return RegionScope.options(findAll().stream().filter(b->b.region().equals(region)).map(b->RegionScope.district(b.organization())).toList());
+ }
  default BenefitPage search(BenefitSearch s) {
   var filtered = findAll().stream()
    .filter(b -> s.q().isEmpty() || (b.title()+" "+b.summary()+" "+b.organization()+" "+b.eligibility()).toLowerCase(Locale.ROOT).contains(s.q().toLowerCase(Locale.ROOT)))
    .filter(b -> s.region().equals("전체") || b.region().equals("전국") || b.region().equals(s.region()))
+   .filter(b -> RegionScope.matches(b,s.district()))
    .filter(b -> s.category().equals("전체") || b.category().equals(s.category()))
    .filter(b -> !s.openOnly() || b.deadline() == null || !b.deadline().isBefore(s.today()))
    .filter(b -> s.ids() == null || s.ids().contains(b.id()));

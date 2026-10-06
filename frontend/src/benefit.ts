@@ -3,6 +3,7 @@ export type Benefit = {
   title: string;
   organization: string;
   region: string;
+  district?: string;
   category: string;
   summary: string;
   eligibility: string;

@@ -16,11 +16,19 @@ public class PostgresBenefitRepository implements BenefitRepository {
  public PostgresBenefitRepository(JdbcClient jdbc) { this.jdbc = jdbc; }
  public List<Benefit> findAll() { return jdbc.sql("SELECT * FROM benefit WHERE active ORDER BY updated_at DESC, id LIMIT 100").query(MAPPER).list(); }
  public Optional<Benefit> findById(String id) { return jdbc.sql("SELECT * FROM benefit WHERE active AND id=:id").param("id", id).query(MAPPER).optional(); }
+ public List<String> districts(String region) {
+  return RegionScope.options(jdbc.sql("SELECT DISTINCT "+RegionScope.SQL_DISTRICT+" AS district FROM benefit b WHERE b.active AND b.region=:region").param("region",region).query((r,n)->r.getString("district")).list());
+ }
  public BenefitPage search(BenefitSearch s) {
   StringBuilder where = new StringBuilder(" WHERE b.active");
   Map<String,Object> p = new HashMap<>();
   if (!s.q().isEmpty()) { where.append(" AND position(:q in lower(concat_ws(' ', b.title, b.summary, b.organization, b.eligibility))) > 0"); p.put("q", s.q().toLowerCase(Locale.ROOT)); }
   if (!s.region().equals("전체")) { where.append(" AND b.region IN ('전국', :region)"); p.put("region", s.region()); }
+  if(!s.district().isEmpty()) {
+   String district=RegionScope.SQL_DISTRICT;
+   where.append(" AND (b.region='전국' OR "+district+" IS NULL OR "+district+"=:district OR "+district+" LIKE :district || ' %' OR :district LIKE "+district+" || ' %')");
+   p.put("district",s.district());
+  }
   if (!s.category().equals("전체")) { where.append(" AND b.category=:category"); p.put("category", s.category()); }
   if (s.openOnly()) { where.append(" AND (b.deadline IS NULL OR b.deadline >= :today)"); p.put("today", s.today()); }
   if (s.ids()!=null) {

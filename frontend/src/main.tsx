@@ -194,9 +194,11 @@ function App() {
     [region, rawRegion] = useState(
       () => initialParams().get("region") || "전체",
     ),
+    [district, rawDistrict] = useState(() => initialParams().get("region") && initialParams().get("region") !== "전체" ? initialParams().get("district") || "" : ""),
     [category, rawCategory] = useState(
       () => initialParams().get("category") || "전체",
     );
+  const [districtOptions, setDistrictOptions] = useState<{region: string; items: string[]; loading: boolean; error: boolean}>({region: "", items: [], loading: false, error: false});
   const [openOnly, rawOpen] = useState(
       () => initialParams().get("openOnly") === "true",
     ),
@@ -225,8 +227,10 @@ function App() {
   };
   const setRegion = (v: string) => {
     rawRegion(v);
+    rawDistrict("");
     setPage(1);
   };
+  const setDistrict = (value: string) => { rawDistrict(value); setPage(1); };
   const setCategory = (v: string) => {
     rawCategory(v);
     setPage(1);
@@ -278,6 +282,7 @@ function App() {
       const p = initialParams();
       rawQ(p.get("q") || "");
       rawRegion(p.get("region") || "전체");
+      rawDistrict(p.get("region") && p.get("region") !== "전체" ? p.get("district") || "" : "");
       rawCategory(p.get("category") || "전체");
       rawOpen(p.get("openOnly") === "true");
       rawSavedOnly(p.get("view") === "saved");
@@ -293,6 +298,7 @@ function App() {
     u.search = "";
     if (q) u.searchParams.set("q", q);
     if (region !== "전체") u.searchParams.set("region", region);
+    if (district && region !== "전체") u.searchParams.set("district", district);
     if (category !== "전체") u.searchParams.set("category", category);
     if (openOnly) u.searchParams.set("openOnly", "true");
     if (savedOnly) u.searchParams.set("view", "saved");
@@ -300,7 +306,25 @@ function App() {
     if (page > 1) u.searchParams.set("page", String(page));
     if (detailId) u.searchParams.set("benefit", detailId);
     history.replaceState(null, "", u);
-  }, [q, region, category, openOnly, savedOnly, sort, page, detailId]);
+  }, [q, region, district, category, openOnly, savedOnly, sort, page, detailId]);
+  useEffect(() => {
+    const abort = new AbortController();
+    if (region === "전체") {
+      setDistrictOptions({region, items: [], loading: false, error: false});
+      return;
+    }
+    setDistrictOptions({region, items: [], loading: true, error: false});
+    fetch(`${apiBase}/api/regions/districts?${new URLSearchParams({region})}`, {signal: abort.signal})
+      .then(async response => {
+        if (!response.ok) throw Error();
+        const options: unknown = await response.json();
+        if (!Array.isArray(options) || !options.every(value => typeof value === "string")) throw Error();
+        if (!abort.signal.aborted) setDistrictOptions({region, items: options, loading: false, error: false});
+      }).catch(() => {
+        if (!abort.signal.aborted) setDistrictOptions({region, items: [], loading: false, error: true});
+      });
+    return () => abort.abort();
+  }, [region, retry]);
   function openDetail(id: string) {
     const u = new URL(location.href);
     u.searchParams.set("benefit", id);
@@ -353,6 +377,7 @@ function App() {
         const params = new URLSearchParams({
           q,
           region,
+          district,
           category,
           openOnly: String(openOnly),
           page: String(page),
@@ -397,6 +422,7 @@ function App() {
   }, [
     q,
     region,
+    district,
     category,
     openOnly,
     retry,
@@ -581,7 +607,7 @@ function App() {
           <label className="region-field">
             <span className="field-label">
               <Icon name="pin" />
-              지역
+              시·도
             </span>
             <select
               aria-label="거주 지역"
@@ -593,6 +619,16 @@ function App() {
                   {r === "전체" ? "전국 · 모든 지역" : r}
                 </option>
               ))}
+            </select>
+          </label>
+          <label className="district-field">
+            <span className="field-label"><Icon name="pin" />시·군·구</span>
+            <select aria-label="시·군·구" value={district}
+              disabled={region === "전체" || districtOptions.region !== region || districtOptions.loading}
+              onChange={e => setDistrict(e.target.value)}>
+              <option value="">{region === "전체" ? "시·도를 먼저 선택" : districtOptions.loading ? "불러오는 중…" : "시·군·구 전체"}</option>
+              {district && !districtOptions.items.includes(district) && <option value={district}>{district}</option>}
+              {districtOptions.items.map(value => <option key={value} value={value}>{value}</option>)}
             </select>
           </label>
           <label className="category-field">
@@ -621,6 +657,9 @@ function App() {
             혜택 찾기 <Icon name="arrow" />
           </button>
         </form>
+        {region !== "전체" && <p className="district-help">
+          {districtOptions.error ? <>세부 지역을 불러오지 못했어요. <button className="text-button" onClick={() => setRetry(n => n + 1)}>다시 불러오기</button></> : districtOptions.loading ? "세부 지역을 불러오고 있어요." : districtOptions.items.length === 0 ? "현재 공고에서 확인된 시·군·구가 없어요. 시·도 단위로 찾아보세요." : "세부 지역은 제공기관 기준이에요. 전국·시도 및 세부 지역 미확인 공고도 함께 표시해요. 실제 지원 대상은 공식 안내를 확인해 주세요."}
+        </p>}
         {demo && (
           <div className="demo-banner" role="status">
             <Icon name="info" />
@@ -708,6 +747,9 @@ function App() {
                     <Icon name="close" />
                   </button>
                 )}
+                {district && <button onClick={() => setDistrict("")}>
+                  {district}<span className="sr-only"> 세부 지역 해제</span><Icon name="close" />
+                </button>}
                 {category !== "전체" && (
                   <button onClick={() => setCategory("전체")}>
                     {category}
@@ -813,7 +855,7 @@ function App() {
                   <article className="benefit-card" key={b.id}>
                     <div className="card-top">
                       <span className="tag">{b.category}</span>
-                      <span className="card-region">{b.region}</span>
+                      <span className="card-region">{b.region}{b.district ? ` ${b.district}` : ""}</span>
                       <button
                         className={`bookmark-button ${saved.includes(b.id) ? "is-saved" : ""}`}
                         aria-label={`${b.title} 관심목록 ${saved.includes(b.id) ? "해제" : "저장"}`}
@@ -1053,7 +1095,7 @@ function App() {
           <>
             <div className="dialog-top">
               <span className="tag">
-                {selected.category} · {selected.region}
+                {selected.category} · {selected.region}{selected.district ? ` ${selected.district}` : ""}
               </span>
               <button
                 className="close-button"
