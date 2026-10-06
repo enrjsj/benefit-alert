@@ -20,7 +20,7 @@ def evaluate(data, now, started):
         return "error", "Government API collection is not configured."
     latest = data.get("latest") or {}
     status = latest.get("status")
-    if status == "RUNNING" or data.get("stalled"):
+    if status == "RUNNING" or data.get("stalled") or (status == "FAILED" and latest.get("errorCode") == "interrupted"):
         return "wait", "Waiting for collection or expired lease recovery."
     finished = timestamp(latest.get("finishedAt"))
     if status in ("FAILED", "PARTIAL") and finished and finished >= started:

@@ -20,6 +20,7 @@ class CollectionCheckTest(unittest.TestCase):
 
     def test_running_expired_lease_and_near_term_retry_wait(self):
         self.assertEqual(evaluate({**self.base, "latest": {"status": "RUNNING"}, "stalled": True}, self.now, self.now)[0], "wait")
+        self.assertEqual(evaluate({**self.base, "latest": {"status": "FAILED", "errorCode": "interrupted", "finishedAt": self.now.isoformat()}}, self.now, self.now)[0], "wait")
         retry = {**self.base, "latest": {"status": "FAILED", "finishedAt": (self.now - timedelta(hours=1)).isoformat()}, "nextAttemptAt": (self.now + timedelta(minutes=10)).isoformat()}
         self.assertEqual(evaluate(retry, self.now, self.now)[0], "wait")
 
