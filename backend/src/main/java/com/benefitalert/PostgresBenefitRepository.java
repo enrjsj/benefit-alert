@@ -26,7 +26,7 @@ public class PostgresBenefitRepository implements BenefitRepository {
   if (!s.region().equals("전체")) { where.append(" AND b.region=:region"); p.put("region", s.region()); }
   if(!s.district().isEmpty()) {
    String district=RegionScope.SQL_DISTRICT;
-   where.append(" AND ("+district+" IS NULL OR "+district+"=:district OR "+district+" LIKE :district || ' %' OR :district LIKE "+district+" || ' %')");
+   where.append(" AND ("+district+"=:district OR "+district+" LIKE :district || ' %')");
    p.put("district",s.district());
   }
   if (!s.category().equals("전체")) { where.append(" AND b.category=:category"); p.put("category", s.category()); }

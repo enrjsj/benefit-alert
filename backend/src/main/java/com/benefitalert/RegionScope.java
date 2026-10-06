@@ -19,7 +19,7 @@ public final class RegionScope {
   if(district.isEmpty()) return true;
   if(b.region().equals("전국")) return false;
   String provider=district(b.organization());
-  return provider.isEmpty() || provider.equals(district) || provider.startsWith(district+" ") || district.startsWith(provider+" ");
+  return provider.equals(district) || provider.startsWith(district+" ");
  }
  public static List<String> options(Collection<String> districts) {
   var options=new TreeSet<String>();
