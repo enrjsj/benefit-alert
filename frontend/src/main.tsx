@@ -1,3 +1,4 @@
+import { createDistrictCache, requestDistricts } from "./districts";
 import { dataStatusMessage, type DataStatus } from "./dataStatus";
 import { StrictMode, useEffect, useRef, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
@@ -137,6 +138,9 @@ function Brand() {
     </span>
   );
 }
+const districtCache = createDistrictCache((() => {
+  try { return window.sessionStorage; } catch { return null; }
+})());
 const regions = [
   "전체",
   "서울",
@@ -198,7 +202,8 @@ function App() {
     [category, rawCategory] = useState(
       () => initialParams().get("category") || "전체",
     );
-  const [districtOptions, setDistrictOptions] = useState<{region: string; items: string[]; loading: boolean; error: boolean}>({region: "", items: [], loading: false, error: false});
+  const [districtOptions, setDistrictOptions] = useState<{region: string; items: string[]; loading: boolean; error: boolean; cached: boolean}>({region: "", items: [], loading: false, error: false, cached: false});
+  const [districtRetry, setDistrictRetry] = useState(0);
   const [openOnly, rawOpen] = useState(
       () => initialParams().get("openOnly") === "true",
     ),
@@ -310,21 +315,24 @@ function App() {
   useEffect(() => {
     const abort = new AbortController();
     if (region === "전체") {
-      setDistrictOptions({region, items: [], loading: false, error: false});
+      setDistrictOptions({region, items: [], loading: false, error: false, cached: false});
       return;
     }
-    setDistrictOptions({region, items: [], loading: true, error: false});
-    fetch(`${apiBase}/api/regions/districts?${new URLSearchParams({region})}`, {signal: abort.signal})
-      .then(async response => {
-        if (!response.ok) throw Error();
-        const options: unknown = await response.json();
-        if (!Array.isArray(options) || !options.every(value => typeof value === "string")) throw Error();
-        if (!abort.signal.aborted) setDistrictOptions({region, items: options, loading: false, error: false});
+    const cached = districtCache.get(region);
+    setDistrictOptions({region, items: cached || [], loading: true, error: false, cached: cached !== null});
+    requestDistricts(`${apiBase}/api/regions/districts?${new URLSearchParams({region})}`, abort.signal)
+      .then(options => {
+        if (!abort.signal.aborted) {
+          districtCache.save(region, options);
+          setDistrictOptions({region, items: options, loading: false, error: false, cached: false});
+        }
       }).catch(() => {
-        if (!abort.signal.aborted) setDistrictOptions({region, items: [], loading: false, error: true});
+        // Only lifecycle cancellation may leave this region's state untouched.
+        // Transport timeout uses a separate signal and must end loading.
+        if (!abort.signal.aborted) setDistrictOptions({region, items: cached || [], loading: false, error: true, cached: cached !== null});
       });
     return () => abort.abort();
-  }, [region, retry]);
+  }, [region, districtRetry]);
   function openDetail(id: string) {
     const u = new URL(location.href);
     u.searchParams.set("benefit", id);
@@ -624,9 +632,9 @@ function App() {
           <label className="district-field">
             <span className="field-label"><Icon name="pin" />시·군·구</span>
             <select aria-label="시·군·구" value={district}
-              disabled={region === "전체" || districtOptions.region !== region || districtOptions.loading}
+              disabled={region === "전체" || districtOptions.region !== region || (districtOptions.loading && !districtOptions.cached)}
               onChange={e => setDistrict(e.target.value)}>
-              <option value="">{region === "전체" ? "시·도를 먼저 선택" : districtOptions.loading ? "불러오는 중…" : "시·군·구 전체"}</option>
+              <option value="">{region === "전체" ? "시·도를 먼저 선택" : districtOptions.loading && !districtOptions.cached ? "불러오는 중…" : "시·군·구 전체"}</option>
               {district && !districtOptions.items.includes(district) && <option value={district}>{district}</option>}
               {districtOptions.items.map(value => <option key={value} value={value}>{value}</option>)}
             </select>
@@ -657,9 +665,18 @@ function App() {
             혜택 찾기 <Icon name="arrow" />
           </button>
         </form>
-        {region !== "전체" && <p className="district-help">
-          {districtOptions.error ? <>세부 지역을 불러오지 못했어요. <button className="text-button" onClick={() => setRetry(n => n + 1)}>다시 불러오기</button></> : districtOptions.loading ? "세부 지역을 불러오고 있어요." : districtOptions.items.length === 0 ? "현재 공고에서 확인된 시·군·구가 없어요. 시·도 단위로 찾아보세요." : "세부 지역은 제공기관 기준이에요. 전국·시도 및 세부 지역 미확인 공고도 함께 표시해요. 실제 지원 대상은 공식 안내를 확인해 주세요."}
-        </p>}
+        {region !== "전체" && <div className="district-help">
+          <p role="status" aria-live="polite">
+            {districtOptions.error
+              ? districtOptions.cached ? "최신 목록을 확인하지 못해 이전 목록을 표시하고 있어요. 아래에서 다시 불러올 수 있어요." : "세부 지역 응답이 늦거나 연결하지 못했어요. 잠시 후 다시 불러와 주세요."
+              : districtOptions.loading
+                ? districtOptions.cached ? "이전 목록으로 선택할 수 있어요. 최신 목록을 확인하고 있어요." : "세부 지역을 불러오고 있어요. 응답이 없으면 20초 안에 다시 불러올 수 있어요."
+                : districtOptions.items.length === 0 ? "현재 공고에서 확인된 시·군·구가 없어요. 시·도 단위로 찾아보세요." : "세부 지역은 제공기관 기준이에요. 전국·시도 및 세부 지역 미확인 공고도 함께 표시해요. 실제 지원 대상은 공식 안내를 확인해 주세요."}
+          </p>
+          {(!districtOptions.loading || districtOptions.cached) && <button className="text-button" onClick={() => setDistrictRetry(n => n + 1)} disabled={districtOptions.loading}>
+            시·군·구 목록 다시 불러오기
+          </button>}
+        </div>}
         {demo && (
           <div className="demo-banner" role="status">
             <Icon name="info" />

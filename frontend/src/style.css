@@ -2469,3 +2469,6 @@ button:disabled {
   .unified-search .search-submit { width: 100%; }
 }
 @media (max-width: 760px) { .unified-search .category-field { grid-column: 1 / -1; } }
+
+.district-help p { margin: 0; }
+.district-help .text-button { margin-top: 4px; }
