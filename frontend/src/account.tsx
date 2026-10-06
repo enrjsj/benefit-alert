@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { createGuestSavedStore, savedKey } from "./guestSaved";
+import { fetchJsonResponse } from "./request";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { type SupabaseClient, type Session } from "@supabase/supabase-js";
 const base = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 export const accountRegions = [
@@ -45,28 +47,19 @@ type Alert = {
   createdAt: string;
   read: boolean;
 };
-function guestSaved(): string[] {
-  try {
-    const a = JSON.parse(localStorage.getItem("benefit-saved") || "[]");
-    return Array.isArray(a)
-      ? [
-          ...new Set<string>(
-            a.filter((x: unknown) => typeof x === "string" && x.length <= 100),
-          ),
-        ].slice(0, 100)
-      : [];
-  } catch {
-    return [];
-  }
-}
 export function useAccount() {
   const [client, setClient] = useState<SupabaseClient | null>(null),
     [session, setSession] = useState<Session | null>(null);
   const [state, setState] = useState<
     "loading" | "ready" | "disabled" | "error"
   >("loading");
-  const [guest, setGuest] = useState(guestSaved),
-    [remote, setRemote] = useState<string[]>([]);
+  const guestStore = useMemo(() => {
+    try { return createGuestSavedStore(localStorage); }
+    catch { return createGuestSavedStore(null); }
+  }, []);
+  const guestSnapshot = useSyncExternalStore(guestStore.subscribe, guestStore.getSnapshot);
+  const guest = guestSnapshot.ids;
+  const [remote, setRemote] = useState<string[]>([]);
   const [profile, setProfile] = useState<Preferences>({
       region: "전체",
       category: "전체",
@@ -79,8 +72,22 @@ export function useAccount() {
     [recovery, setRecovery] = useState(false);
   const [revision, setRevision] = useState(0);
   const current = useRef(session);
+  const sessionEpoch = useRef(0);
   current.current = session;
   const saved = session ? remote : guest;
+  useEffect(() => {
+    const sync = (event: StorageEvent) => { if (event.key === savedKey || event.key === null) guestStore.reload(); };
+    addEventListener("storage", sync);
+    return () => removeEventListener("storage", sync);
+  }, [guestStore]);
+  useEffect(() => { if (guestSnapshot.message) setError(guestSnapshot.message); }, [guestSnapshot]);
+  function updateSession(value: Session | null) {
+    // Invalidate outstanding requests immediately, before React's next render.
+    if (current.current?.user.id !== value?.user.id || current.current?.access_token !== value?.access_token) sessionEpoch.current++;
+    current.current = value;
+    setSession(value);
+    if (!value) setRecovery(false);
+  }
   useEffect(() => {
     let disposed = false,
       subscription: { unsubscribe: () => void } | undefined,
@@ -89,7 +96,7 @@ export function useAccount() {
     setState("loading");
     (async () => {
       try {
-        const r = await fetch(`${base}/api/client-config`, {
+        const r = await fetchJsonResponse(`${base}/api/client-config`, {
           signal: abort.signal,
         });
         if (!r.ok) throw Error();
@@ -104,12 +111,12 @@ export function useAccount() {
         auth = createClient(c.supabaseUrl, c.publishableKey);
         subscription = auth.auth.onAuthStateChange((event, s) => {
           if (disposed) return;
-          setSession(s);
+          updateSession(s);
           if (event === "PASSWORD_RECOVERY") setRecovery(true);
         }).data.subscription;
         const { data } = await auth.auth.getSession();
         if (!disposed) {
-          setSession(data.session);
+          updateSession(data.session);
           setClient(auth);
           setState("ready");
         }
@@ -129,9 +136,10 @@ export function useAccount() {
     method = "GET",
     body?: unknown,
   ): Promise<T> {
+    const epoch = sessionEpoch.current;
     const owner = current.current;
     if (!owner) throw Error("로그인이 필요해요.");
-    const r = await fetch(`${base}/api/account${path}`, {
+    const r = await fetchJsonResponse(`${base}/api/account${path}`, {
       method,
       headers: {
         Authorization: `Bearer ${owner.access_token}`,
@@ -140,7 +148,7 @@ export function useAccount() {
       body: body === undefined ? undefined : JSON.stringify(body),
       cache: "no-store",
     });
-    if (current.current?.user.id !== owner.user.id)
+    if (sessionEpoch.current !== epoch)
       throw Error("계정이 변경되었어요.");
     if (!r.ok)
       throw Error(
@@ -151,12 +159,12 @@ export function useAccount() {
             : "연결이 지연되고 있어요. 다시 시도해 주세요.",
       );
     const result = r.status === 204 ? undefined : await r.json();
-    if (current.current?.user.id !== owner.user.id)
+    if (sessionEpoch.current !== epoch)
       throw Error("계정이 변경되었어요.");
     return result as T;
   }
   async function refresh() {
-    const owner = current.current?.user.id;
+    const epoch = sessionEpoch.current;
     setError("");
     setBusy(true);
     try {
@@ -165,21 +173,22 @@ export function useAccount() {
         request<string[]>("/saved"),
         request<Alert[]>("/notifications"),
       ]);
-      if (current.current?.user.id !== owner) return;
+      if (sessionEpoch.current !== epoch) return;
       setProfile(p);
       setRemote(s);
       setAlerts(a);
       setReady(true);
     } catch (e) {
-      setError((e as Error).message);
+      if (sessionEpoch.current === epoch) setError((e as Error).message);
     } finally {
-      setBusy(false);
+      if (sessionEpoch.current === epoch) setBusy(false);
     }
   }
   useEffect(() => {
     setRemote([]);
     setAlerts([]);
     setReady(false);
+    setBusy(false);
     setError("");
     setProfile({
       region: "전체",
@@ -189,21 +198,11 @@ export function useAccount() {
     if (session) void refresh();
   }, [session?.user.id, session?.access_token]);
   async function toggle(id: string) {
+    const epoch = sessionEpoch.current;
     if (busy) return;
     if (!session) {
-      const next = guest.includes(id)
-        ? guest.filter((x) => x !== id)
-        : [...guest, id];
-      if (next.length > 100) {
-        setError("이 브라우저에는 최대 100개까지 저장할 수 있어요.");
-        return;
-      }
-      setGuest(next);
-      try {
-        localStorage.setItem("benefit-saved", JSON.stringify(next));
-      } catch {
-        setError("브라우저 저장 공간을 사용할 수 없어 이번 방문에만 기억해요.");
-      }
+      setError("");
+      guestStore.toggle(id);
       return;
     }
     if (!ready) {
@@ -213,52 +212,60 @@ export function useAccount() {
     setBusy(true);
     setError("");
     try {
-      setRemote(
-        await request<string[]>(
-          remote.includes(id) ? `/saved/${encodeURIComponent(id)}` : "/saved",
-          remote.includes(id) ? "DELETE" : "POST",
-          remote.includes(id) ? undefined : { ids: [id] },
-        ),
+      const result = await request<string[]>(
+        remote.includes(id) ? `/saved/${encodeURIComponent(id)}` : "/saved",
+        remote.includes(id) ? "DELETE" : "POST",
+        remote.includes(id) ? undefined : { ids: [id] },
       );
+      if (sessionEpoch.current === epoch) setRemote(result);
     } catch (e) {
-      setError((e as Error).message);
+      if (sessionEpoch.current === epoch) setError((e as Error).message);
     } finally {
-      setBusy(false);
+      if (sessionEpoch.current === epoch) setBusy(false);
     }
   }
   async function saveProfile(p: Preferences) {
+    const epoch = sessionEpoch.current;
     setBusy(true);
     setError("");
     try {
-      setProfile(await request<Preferences>("/profile", "PUT", p));
-      setAlerts(await request<Alert[]>("/notifications"));
+      const profile = await request<Preferences>("/profile", "PUT", p);
+      if (sessionEpoch.current !== epoch) return false;
+      setProfile(profile);
+      const alerts = await request<Alert[]>("/notifications");
+      if (sessionEpoch.current !== epoch) return false;
+      setAlerts(alerts);
       return true;
     } catch (e) {
-      setError((e as Error).message);
+      if (sessionEpoch.current === epoch) setError((e as Error).message);
       return false;
     } finally {
-      setBusy(false);
+      if (sessionEpoch.current === epoch) setBusy(false);
     }
   }
   async function importGuest() {
+    const epoch = sessionEpoch.current;
     setBusy(true);
     setError("");
     try {
-      setRemote(await request<string[]>("/saved", "POST", { ids: guest }));
+      const result = await request<string[]>("/saved", "POST", { ids: guest });
+      if (sessionEpoch.current === epoch) setRemote(result);
     } catch (e) {
-      setError((e as Error).message);
+      if (sessionEpoch.current === epoch) setError((e as Error).message);
     } finally {
-      setBusy(false);
+      if (sessionEpoch.current === epoch) setBusy(false);
     }
   }
   async function readAlert(a: Alert) {
+    const epoch = sessionEpoch.current;
     try {
       await request(`/notifications/${a.id}/read`, "PUT");
+      if (sessionEpoch.current !== epoch) return;
       setAlerts((items) =>
         items.map((x) => (x.id === a.id ? { ...x, read: true } : x)),
       );
     } catch (e) {
-      setError((e as Error).message);
+      if (sessionEpoch.current === epoch) setError((e as Error).message);
     }
   }
   return {

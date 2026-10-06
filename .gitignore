@@ -11,3 +11,6 @@ target/
 
 __pycache__/
 *.pyc
+
+playwright-report/
+test-results/

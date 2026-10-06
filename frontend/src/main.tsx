@@ -1,3 +1,5 @@
+import { readSearchState, searchRegions } from "./searchState";
+import { fetchJsonResponse } from "./request";
 import { deadlineLabel } from "./deadline";
 import { DeadlineCalendarButton } from "./DeadlineCalendarButton";
 import { ApplicationRecordEditor } from "./ApplicationRecordEditor";
@@ -146,29 +148,8 @@ function Brand() {
 const districtCache = createDistrictCache((() => {
   try { return window.sessionStorage; } catch { return null; }
 })());
-const regions = [
-  "전체",
-  "서울",
-  "경기",
-  "인천",
-  "부산",
-  "대구",
-  "대전",
-  "광주",
-  "울산",
-  "세종",
-  "강원",
-  "충북",
-  "충남",
-  "전북",
-  "전남",
-  "경북",
-  "경남",
-  "제주",
-];
-function initialParams() {
-  return new URLSearchParams(location.search);
-}
+const regions = searchRegions;
+function initialParams() { return readSearchState(location.search); }
 function App() {
   const account = useAccount();
   const saved = account.saved;
@@ -190,32 +171,32 @@ function App() {
   const [demo, setDemo] = useState(false),
     [loading, setLoading] = useState(true),
     [error, setError] = useState(false);
-  const [q, rawQ] = useState(() => initialParams().get("q") || ""),
+  const [q, rawQ] = useState(() => initialParams().q),
     [region, rawRegion] = useState(
-      () => initialParams().get("region") || "전체",
+      () => initialParams().region,
     ),
-    [district, rawDistrict] = useState(() => initialParams().get("region") && initialParams().get("region") !== "전체" ? initialParams().get("district") || "" : ""),
+    [district, rawDistrict] = useState(() => initialParams().district),
     [category, rawCategory] = useState(
-      () => initialParams().get("category") || "전체",
+      () => initialParams().category,
     );
   const [districtOptions, setDistrictOptions] = useState<{region: string; items: string[]; loading: boolean; error: boolean; cached: boolean}>({region: "", items: [], loading: false, error: false, cached: false});
   const [districtRetry, setDistrictRetry] = useState(0);
   const [openOnly, rawOpen] = useState(
-      () => initialParams().get("openOnly") === "true",
+      () => initialParams().openOnly,
     ),
     [savedOnly, rawSavedOnly] = useState(
-      () => initialParams().get("view") === "saved",
+      () => initialParams().savedOnly,
     );
   const [selected, setSelected] = useState<Benefit | null>(null),
     [detailId, setDetailId] = useState(
-      () => initialParams().get("benefit") || "",
+      () => initialParams().detailId,
     ),
     [detailError, setDetailError] = useState("");
   const [retry, setRetry] = useState(0),
     [notice, setNotice] = useState(""),
-    [sort, rawSort] = useState(() => initialParams().get("sort") || "default");
+    [sort, rawSort] = useState(() => initialParams().sort);
   const [page, setPage] = useState(() =>
-      Math.max(1, Math.min(10000, Number(initialParams().get("page")) || 1)),
+      initialParams().page,
     ),
     [total, setTotal] = useState(0),
     [pages, setPages] = useState(0);
@@ -223,7 +204,7 @@ function App() {
   const dialog = useRef<HTMLDialogElement>(null),
     searchInput = useRef<HTMLInputElement>(null);
   const setQ = (v: string) => {
-    rawQ(v);
+    rawQ(v.slice(0, 200));
     setPage(1);
   };
   const setRegion = (v: string) => {
@@ -261,7 +242,7 @@ function App() {
       if (document.hidden || pending || abort.signal.aborted) return;
       pending = true;
       try {
-        const response = await fetch(`${apiBase}/api/data-status`, { signal: abort.signal, cache: "no-store" });
+        const response = await fetchJsonResponse(`${apiBase}/api/data-status`, { signal: abort.signal, cache: "no-store" });
         if (response.ok) {
           const status = await response.json();
           if (!abort.signal.aborted) setDataStatus(status);
@@ -282,21 +263,21 @@ function App() {
     const currentUrl = location.href;
     const pop = () => {
       const p = initialParams();
-      if (recordDirty && (p.get("benefit") || "") !== detailId) {
+      if (recordDirty && p.detailId !== detailId) {
         if (!window.confirm("저장하지 않은 신청 상태·메모가 있어요. 저장하지 않고 이동할까요?")) {
           history.pushState(null, "", currentUrl); return;
         }
         setRecordDirty(false);
       }
-      rawQ(p.get("q") || "");
-      rawRegion(p.get("region") || "전체");
-      rawDistrict(p.get("region") && p.get("region") !== "전체" ? p.get("district") || "" : "");
-      rawCategory(p.get("category") || "전체");
-      rawOpen(p.get("openOnly") === "true");
-      rawSavedOnly(p.get("view") === "saved");
-      rawSort(p.get("sort") || "default");
-      setPage(Math.max(1, Math.min(10000, Number(p.get("page")) || 1)));
-      setDetailId(p.get("benefit") || "");
+      rawQ(p.q);
+      rawRegion(p.region);
+      rawDistrict(p.district);
+      rawCategory(p.category);
+      rawOpen(p.openOnly);
+      rawSavedOnly(p.savedOnly);
+      rawSort(p.sort);
+      setPage(p.page);
+      setDetailId(p.detailId);
     };
     addEventListener("popstate", pop);
     return () => removeEventListener("popstate", pop);
@@ -362,7 +343,7 @@ function App() {
     setSelected(null);
     setDetailError("");
     if (!dialog.current?.open) dialog.current?.showModal();
-    fetch(`${apiBase}/api/benefits/${encodeURIComponent(detailId)}`, {
+    fetchJsonResponse(`${apiBase}/api/benefits/${encodeURIComponent(detailId)}`, {
       signal: abort.signal,
     })
       .then(async (r) => {
@@ -409,7 +390,7 @@ function App() {
               saved.length ? saved.join(",") : "__empty_guest_list__",
             );
         }
-        const response = await fetch(`${apiBase}/api/benefits?${params}`, {
+        const response = await fetchJsonResponse(`${apiBase}/api/benefits?${params}`, {
           headers: account.session
             ? { Authorization: `Bearer ${account.session.access_token}` }
             : {},

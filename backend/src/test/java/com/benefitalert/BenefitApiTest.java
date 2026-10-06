@@ -18,4 +18,10 @@ class BenefitApiTest {
   mvc.perform(get("/api/client-config")).andExpect(status().isOk()).andExpect(header().string("Cache-Control","no-store")).andExpect(jsonPath("$.authEnabled").value(false)).andExpect(jsonPath("$.publishableKey").value(""));
  }
  @Test void missingDetail() throws Exception {mvc.perform(get("/api/benefits/no-such-id")).andExpect(status().isNotFound());}
+ @Test void personalListErrorsAreNeverCacheable() throws Exception {
+  mvc.perform(get("/api/benefits").param("savedOnly","true"))
+   .andExpect(status().isServiceUnavailable()).andExpect(header().string("Cache-Control","no-store")).andExpect(header().string("Vary","Authorization"));
+  mvc.perform(get("/api/benefits").param("savedOnly","invalid"))
+   .andExpect(status().isBadRequest()).andExpect(header().string("Cache-Control","no-store"));
+ }
 }

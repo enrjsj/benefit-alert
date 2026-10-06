@@ -1,3 +1,4 @@
+import { fetchJsonResponse } from "./request";
 import { useEffect, useRef, useState } from "react";
 import type { Benefit } from "./benefit";
 import type { PlanningState } from "./PlanningPanel";
@@ -37,7 +38,7 @@ export function PreparationDialog({ planning, onClose, onDetail }: {
         for (let offset = 0; offset < ids.length; offset += 100) {
           const params = new URLSearchParams({ size: "100" });
           ids.slice(offset, offset + 100).forEach((id) => params.append("ids", id));
-          const response = await fetch(`${base}/api/benefits?${params}`, { signal: abort.signal });
+          const response = await fetchJsonResponse(`${base}/api/benefits?${params}`, { signal: abort.signal });
           if (!response.ok) throw Error();
           const data = await response.json();
           if (!Array.isArray(data.items)) throw Error();

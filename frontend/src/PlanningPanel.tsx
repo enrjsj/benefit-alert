@@ -1,3 +1,4 @@
+import { fetchJsonResponse } from "./request";
 import {
   useEffect,
   useMemo,
@@ -42,7 +43,7 @@ export function usePlanning(owner: string, token?: string) {
     }
     if (!token) return createPlanningStore(storage, key);
     return createRemotePlanningStore((method, body, signal, importing) =>
-      fetch(`${base}/api/account/planning${importing ? "/import" : ""}`, {
+      fetchJsonResponse(`${base}/api/account/planning${importing ? "/import" : ""}`, {
         method, signal, cache: "no-store",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: body === undefined ? undefined : JSON.stringify(body),
@@ -188,7 +189,7 @@ export function ComparisonDialog({
     }
     const params = new URLSearchParams({ size: "3" });
     ids.forEach((id) => params.append("ids", id));
-    fetch(`${base}/api/benefits?${params}`, { signal: abort.signal })
+    fetchJsonResponse(`${base}/api/benefits?${params}`, { signal: abort.signal })
       .then(async (r) => {
         if (!r.ok) throw Error();
         return r.json();
