@@ -52,9 +52,9 @@ Supabase Authentication → URL Configuration에서 Site URL을 `https://benefit
 
 ## 수집 정책
 
-[행정안전부 대한민국 공공서비스(혜택) 정보](https://www.data.go.kr/data/15113968/openapi.do)의 `/api/gov24/v3/serviceList`를 사용합니다. 키가 있으면 서버 시작 45초 후, 이후 실행 완료부터 6시간 간격으로 조회합니다. **Render가 중지/절전 상태면 실행되지 않습니다.** 정시 수집이 필요하면 항상 실행되는 서비스나 별도 스케줄러가 필요합니다.
+[행정안전부 대한민국 공공서비스(혜택) 정보](https://www.data.go.kr/data/15113968/openapi.do)의 `/api/gov24/v3/serviceList`를 사용합니다. 키가 있으면 서버 시작 45초 후부터 1분마다 실행 필요 여부를 확인합니다. 전체 성공 후 6시간, 일시 실패·부분 수집 후 10분 뒤 재시도하며 인증 거부(401/403)는 6시간 뒤 다시 확인합니다. **Render가 중지/절전 상태면 실행되지 않습니다.** 정시 수집이 필요하면 항상 실행되는 서비스나 별도 스케줄러가 필요합니다.
 
-페이지당 100건, 최대 200페이지를 수집합니다. 다음 주기에 실패한 수집을 다시 시도합니다. 동시 실행은 DB 임대로 제한합니다. 중간 오류·빈 응답·중복 페이지·수집 상한·거부된 레코드가 있으면 기존 공고를 비활성화하지 않습니다. 온전한 0건 초과 스냅샷을 모두 받은 경우에만 이번 응답에 없는 정부24 공고를 비활성화합니다. 수동 공고는 유지합니다. 원본이 같으면 `updated_at`을 바꾸지 않습니다.
+페이지당 100건, 최대 200페이지를 수집합니다. 동시 실행은 15분 DB 임대로 제한하며 만료된 실행은 중단으로 기록하고 복구합니다. 페이지마다 진행 건수를 기록합니다. 중간 오류·빈 응답·중복 페이지·수집 상한·거부된 레코드가 있으면 기존 공고를 비활성화하지 않습니다. 온전한 0건 초과 스냅샷을 모두 받은 경우에만 이번 응답에 없는 정부24 공고를 비활성화합니다. 수동 공고는 유지합니다. 원본이 같으면 `updated_at`을 바꾸지 않습니다.
 
 기관명에 명확한 지역 정보가 없으면 `지역확인`으로 두며 중앙행정기관만 `전국`으로 분류합니다. 모호한 신청 기간은 원문을 보존하고 날짜를 추측하지 않습니다. 출처의 공식 안내를 반드시 확인해야 합니다.
 
@@ -115,7 +115,7 @@ GitHub Actions도 PostgreSQL 통합 테스트를 실행합니다. 테스트 항�
 - `sort`: default / deadline / title. 비회원 관심목록은 `ids=a,b`, 회원은 `savedOnly=true`와 Bearer 토큰 사용
 - `GET /api/benefits/{id}`: 공고 상세
 - `GET /api/client-config`: 공개 인증 설정(키 미설정이면 authEnabled=false)
-- `GET /api/data-status`: 수집 설정 여부와 마지막 실행 요약(prod)
+- `GET /api/data-status`: 수집 설정, 마지막 전체 성공 시각, 진행 건수, 잠금 만료, 12시간 지연, 다음 시도 예정 시각(prod, no-store)
 - `GET|PUT /api/account/profile`: region, category, notificationsEnabled
 - `GET|POST /api/account/saved`: POST body `{"ids":["공고 ID"]}`
 - `DELETE /api/account/saved/{id}`

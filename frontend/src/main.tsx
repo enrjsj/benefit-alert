@@ -1,3 +1,4 @@
+import { dataStatusMessage, type DataStatus } from "./dataStatus";
 import { StrictMode, useEffect, useRef, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import "./style.css";
@@ -215,10 +216,7 @@ function App() {
     ),
     [total, setTotal] = useState(0),
     [pages, setPages] = useState(0);
-  const [dataStatus, setDataStatus] = useState<{
-    configured: boolean;
-    latest: null | { status: string; finishedAt: string };
-  } | null>(null);
+  const [dataStatus, setDataStatus] = useState<DataStatus | null>(null);
   const dialog = useRef<HTMLDialogElement>(null),
     searchInput = useRef<HTMLInputElement>(null);
   const setQ = (v: string) => {
@@ -253,11 +251,27 @@ function App() {
   }, [account.error]);
   useEffect(() => {
     const abort = new AbortController();
-    fetch(`${apiBase}/api/data-status`, { signal: abort.signal })
-      .then((r) => (r.ok ? r.json() : null))
-      .then(setDataStatus)
-      .catch(() => {});
-    return () => abort.abort();
+    let pending = false;
+    const refresh = async () => {
+      if (document.hidden || pending || abort.signal.aborted) return;
+      pending = true;
+      try {
+        const response = await fetch(`${apiBase}/api/data-status`, { signal: abort.signal, cache: "no-store" });
+        if (response.ok) {
+          const status = await response.json();
+          if (!abort.signal.aborted) setDataStatus(status);
+        }
+      } catch { /* Keep the last known status during temporary outages. */ }
+      finally { pending = false; }
+    };
+    void refresh();
+    const timer = setInterval(refresh, 60000);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      abort.abort();
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", refresh);
+    };
   }, [retry]);
   useEffect(() => {
     const pop = () => {
@@ -884,15 +898,7 @@ function App() {
             )}
             {dataStatus && (
               <p className="data-status">
-                {!dataStatus.configured
-                  ? "공식 공고 연동을 준비하고 있어요."
-                  : dataStatus.latest?.status === "SUCCESS"
-                    ? `공식 공고 업데이트 · ${new Date(dataStatus.latest.finishedAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}`
-                    : dataStatus.latest?.status === "RUNNING"
-                      ? "공식 공고를 불러오고 있어요."
-                      : dataStatus.latest
-                        ? "공고 업데이트가 지연되고 있어요. 신청 전 공식 안내를 확인해 주세요."
-                        : "첫 공식 공고 업데이트를 기다리고 있어요."}
+                {dataStatusMessage(dataStatus)}
               </p>
             )}
           </section>
