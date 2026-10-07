@@ -1,3 +1,5 @@
+import { DataReportDialog } from "./DataReportDialog";
+import { dataTime } from "./dataReport";
 import { readSearchState, searchRegions } from "./searchState";
 import { fetchJsonResponse } from "./request";
 import { deadlineLabel } from "./deadline";
@@ -166,6 +168,7 @@ function App() {
   useEffect(() => {
     if (planning.message) setNotice(planning.message);
   }, [planning.message]);
+  const [dataReportOpen, setDataReportOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [items, setItems] = useState<Benefit[]>([]);
   const [demo, setDemo] = useState(false),
@@ -945,6 +948,7 @@ function App() {
                 </button>
               </nav>
             )}
+            <button className="text-button data-report-trigger" onClick={() => setDataReportOpen(true)}>데이터 현황과 업데이트 보기</button>
             {dataStatus && (
               <p className="data-status">
                 {dataStatusMessage(dataStatus)}
@@ -1138,6 +1142,12 @@ function App() {
               ))}
             </dl>
             <ApplicationChecklist benefit={selected} planning={planning} />
+            <section className="benefit-provenance" aria-label="정보 출처와 갱신 시각">
+              <h3>정보 출처와 갱신 시각</h3>
+              <p>출처 · {demo ? "가상 예시 공고" : selected.sourceKind === "gov24" ? "정부24 공공서비스 정보" : selected.sourceKind === "manual" ? "등록된 공개 자료" : "아래 공식 안내 참고"}</p>
+              <p>혜택온 내용 갱신 · {dataTime(selected.updatedAt)}{selected.updatedAt ? " (한국 시간)" : ""}</p>
+              <p className="planning-help">내용 갱신 시각은 혜택온에 저장된 내용이 바뀐 시각이며, 기관의 공고 게시일이나 최근 수집 시각과 다를 수 있어요. 정확한 자격과 신청 기간은 공식 안내에서 확인해 주세요.</p>
+            </section>
             <ApplicationRecordEditor key={`${planningOwner}:${selected.id}`} id={selected.id} planning={planning} onDirtyChange={setRecordDirty} />
             <div className="dialog-actions">
               {!demo && <DeadlineCalendarButton key={selected.id} benefit={selected} />}
@@ -1213,6 +1223,7 @@ function App() {
           </button>
         </section>
       )}
+      {dataReportOpen && <DataReportDialog onClose={() => setDataReportOpen(false)} />}
       {accountOpen && (
         <AccountPanel
           account={account}

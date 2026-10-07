@@ -12,4 +12,6 @@ export type Benefit = {
   deadline: string | null;
   periodLabel: string;
   sourceUrl: string;
+  sourceKind?: string | null;
+  updatedAt?: string | null;
 };

@@ -2485,3 +2485,16 @@ button:disabled {
 
 .district-help p { margin: 0; }
 .district-help .text-button { margin-top: 4px; }
+
+.data-report-trigger { margin: 16px 0; }
+.data-report-dialog { width: min(720px, calc(100vw - 32px)); }
+.coverage-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; margin: 20px 0; }
+.coverage-grid > div { display: block; padding: 16px; border-radius: 14px; background: #f3f7f1; }
+.coverage-grid dt { font-size: .85rem; color: #55685a; }
+.coverage-grid dd { margin: 8px 0 0; font-size: 1.6rem; font-weight: 700; overflow-wrap: anywhere; }
+.coverage-grid small { margin-left: 4px; font-size: .8rem; font-weight: 400; }
+.collection-history { list-style: none; padding: 0; }
+.collection-history li { border-top: 1px solid #dce5d8; padding: 16px 0; }
+.collection-history p { font-size: .88rem; margin: 5px 0; overflow-wrap: anywhere; }
+.benefit-provenance { padding: 20px 0; border-top: 1px solid #dce5d8; }
+@media (max-width: 600px) { .coverage-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }

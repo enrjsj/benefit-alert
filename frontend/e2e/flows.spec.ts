@@ -211,3 +211,32 @@ test('calendar download contains the selected benefit and an all-day exclusive e
   const text=Buffer.concat(buffers).toString('utf8').replace(/\r\n /g,'');
   expect(text).toContain('DTSTART;VALUE=DATE:20991231');expect(text).toContain('DTEND;VALUE=DATE:21000101');expect(text).toContain('강남 주거 지원');
 });
+const reportFixture={demo:false,generatedAt:'2026-10-07T00:00:00Z',coverage:{total:4,nationwide:1,regionKnown:2,districtKnown:1,regionUnknown:1,deadlineKnown:3},history:[{status:'INTERRUPTED',startedAt:'2026-10-07T00:00:00Z',finishedAt:null,fetchedCount:10,rejectedCount:0},{status:'SUCCESS',startedAt:'2026-10-06T18:00:00Z',finishedAt:'2026-10-06T18:03:00Z',fetchedCount:4,rejectedCount:0}]};
+test('data report recovers from failure, preserves the last snapshot and fits mobile',async({page})=>{
+ let fail=true;await page.route('**/api/data-report',r=>fail?r.fulfill({status:503,json:{}}):r.fulfill({json:reportFixture}));
+ await page.goto('/?region=서울&district=강남구');await expect(cards(page)).toHaveCount(1);
+ await page.getByRole('button',{name:'데이터 현황과 업데이트 보기',exact:true}).click();
+ await expect(page.locator('.data-report-dialog [role=alert]')).toContainText('현황을 불러오지 못');
+ fail=false;await page.getByRole('button',{name:'현황 새로고침',exact:true}).click();
+ await expect(page.locator('.coverage-grid > div').first()).toContainText('4건');
+ await expect(page.locator('.collection-history li')).toHaveCount(2);
+ await expect(page.locator('.collection-history li').first()).toContainText('중단 · 복구 대기');
+ await page.setViewportSize({width:390,height:844});
+ expect(await page.locator('.data-report-dialog').evaluate(e=>e.scrollWidth<=e.clientWidth)).toBe(true);
+ fail=true;await page.getByRole('button',{name:'현황 새로고침',exact:true}).click();
+ await expect(page.locator('.data-report-dialog [role=alert]')).toContainText('마지막으로 확인한 현황');
+ await expect(page.locator('.coverage-grid > div').first()).toContainText('4건');
+ await page.keyboard.press('Escape');await expect(page.locator('.data-report-dialog')).toHaveCount(0);
+ await expect(page).toHaveURL(/district=/);await expect(cards(page)).toHaveCount(1);
+});
+test('demo reports have empty history and benefit provenance uses explicit source timestamps',async({page})=>{
+ await page.route('**/api/data-report',r=>r.fulfill({json:{...reportFixture,demo:true,history:[]}}));
+ await page.route('**/api/benefits/a',r=>r.fulfill({json:{...benefits[0],sourceKind:'gov24',updatedAt:'2026-10-07T00:00:00Z'}}));
+ await page.goto('/?benefit=a');
+ await expect(page.getByLabel('정보 출처와 갱신 시각')).toContainText('정부24 공공서비스 정보');
+ await expect(page.getByLabel('정보 출처와 갱신 시각')).toContainText('9:00:00');
+ await page.getByLabel('상세 닫기',{exact:true}).click();
+ await page.getByRole('button',{name:'데이터 현황과 업데이트 보기',exact:true}).click();
+ await expect(page.locator('.data-report-dialog')).toContainText('가상 예시 공고의 현황');
+ await expect(page.locator('.data-report-dialog')).toContainText('아직 업데이트 이력이 없어요');
+});

@@ -20,6 +20,7 @@ def run(base='https://benefit-alert.vercel.app'):
         'open': '/api/benefits?openOnly=true&sort=deadline&size=100',
         'districts': '/api/regions/districts?' + urlencode(dict(region='경기')),
         'status': '/api/data-status',
+        'report': '/api/data-report',
         'private': '/api/account/planning',
         'saved': '/api/benefits?savedOnly=true',
         'missing': '/api/benefits/smoke-definitely-missing-id',
@@ -37,6 +38,16 @@ def run(base='https://benefit-alert.vercel.app'):
     for name,(code,_,_) in result.items():
         assert code == (401 if name in ('private','saved') else 404 if name=='missing' else 200),(name,code)
     data=lambda name:result[name][2]
+    report=data('report');coverage=report['coverage']
+    assert report['demo'] is False
+    assert coverage['total']==coverage['nationwide']+coverage['regionKnown']+coverage['regionUnknown']
+    assert 0<=coverage['districtKnown']<=coverage['regionKnown']
+    assert 0<=coverage['deadlineKnown']<=coverage['total']
+    assert len(report['history'])<=10
+    assert all(set(r)=={'status','startedAt','finishedAt','fetchedCount','rejectedCount'} for r in report['history'])
+    _,detail=get(('detail','/api/benefits/'+data('all')['items'][0]['id']))
+    assert detail[0]==200 and detail[2]['sourceKind'] in ('gov24','manual') and detail[2]['updatedAt']
+
     assert data('health')['status']=='UP'
     assert data('all')['total']>0
     assert set(b['id'] for b in data('all')['items']).isdisjoint(b['id'] for b in data('second_page')['items'])
@@ -49,10 +60,10 @@ def run(base='https://benefit-alert.vercel.app'):
     deadlines=[b['deadline'] for b in data('open')['items'] if b['deadline']]
     assert all(d>=today for d in deadlines)
     assert deadlines==sorted(deadlines)
-    for name in ('private','saved','status'):
+    for name in ('private','saved','status','report'):
         headers={k.lower():v for k,v in result[name][1].items()}
         assert headers.get('cache-control')=='no-store',(name,headers.get('cache-control'))
-    print(json.dumps({'checks':len(queries),'total':data('all')['total'],'gangnam':data('gangnam')['total'],'seongnam':data('seongnam')['total'],'yeongam':data('yeongam')['total'],'status':'passed'},ensure_ascii=False))
+    print(json.dumps({'checks':len(queries)+1,'total':data('all')['total'],'gangnam':data('gangnam')['total'],'seongnam':data('seongnam')['total'],'yeongam':data('yeongam')['total'],'status':'passed'},ensure_ascii=False))
 
 
 if __name__=='__main__':

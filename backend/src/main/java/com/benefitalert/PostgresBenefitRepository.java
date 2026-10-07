@@ -11,7 +11,7 @@ public class PostgresBenefitRepository implements BenefitRepository {
  public static final RowMapper<Benefit> MAPPER = (rs, n) -> new Benefit(
   rs.getString("id"), rs.getString("title"), rs.getString("organization"), rs.getString("region"), rs.getString("category"),
   rs.getString("summary"), rs.getString("eligibility"), rs.getString("support"), rs.getString("application_method"),
-  rs.getObject("deadline", LocalDate.class), rs.getString("period_label"), rs.getString("source_url"));
+  rs.getObject("deadline", LocalDate.class), rs.getString("period_label"), rs.getString("source_url"), "gov24".equals(rs.getString("source_kind")) ? "gov24" : "manual", rs.getObject("updated_at", java.time.OffsetDateTime.class).toInstant());
  private final JdbcClient jdbc;
  public PostgresBenefitRepository(JdbcClient jdbc) { this.jdbc = jdbc; }
  public List<Benefit> findAll() { return jdbc.sql("SELECT * FROM benefit WHERE active ORDER BY updated_at DESC, id LIMIT 100").query(MAPPER).list(); }
