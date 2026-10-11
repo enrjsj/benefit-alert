@@ -2498,3 +2498,5 @@ button:disabled {
 .collection-history p { font-size: .88rem; margin: 5px 0; overflow-wrap: anywhere; }
 .benefit-provenance { padding: 20px 0; border-top: 1px solid #dce5d8; }
 @media (max-width: 600px) { .coverage-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+
+.account-form fieldset { border: 0; padding: 0; margin: 0; min-width: 0; display: grid; gap: 16px; }

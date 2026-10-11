@@ -1,3 +1,4 @@
+import { ApplicationRecordEditor } from "./ApplicationRecordEditor";
 import { fetchJsonResponse } from "./request";
 import { useEffect, useRef, useState } from "react";
 import type { Benefit } from "./benefit";
@@ -10,6 +11,10 @@ const base = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 export function PreparationDialog({ planning, onClose, onDetail }: {
   planning: PlanningState; onClose: () => void; onDetail: (id: string) => void;
 }) {
+  const [editing, setEditing] = useState<string | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const mayLeave = () => !dirty || window.confirm("저장하지 않은 신청 기록을 버릴까요?");
+  const close = () => { if (mayLeave()) onClose(); };
   const dialog = useRef<HTMLDialogElement>(null);
   const [items, setItems] = useState<Benefit[]>([]);
   const [loading, setLoading] = useState(true);
@@ -57,10 +62,11 @@ export function PreparationDialog({ planning, onClose, onDetail }: {
     && (applicationFilter === "all" || planning.data.applications[id]?.status === applicationFilter));
   if (sort === "deadline") shown.sort((a, b) =>
     (deadlineDays(byId.get(a)?.deadline, today) ?? Infinity) - (deadlineDays(byId.get(b)?.deadline, today) ?? Infinity));
-  return <dialog ref={dialog} className="preparation-dialog" aria-labelledby="preparation-title" onCancel={onClose} onClose={onClose}>
-    <div className="dialog-top"><span className="section-kicker">MY APPLICATIONS</span><button className="close-button" aria-label="신청 준비 닫기" onClick={onClose}>×</button></div>
+  return <dialog ref={dialog} className="preparation-dialog" aria-labelledby="preparation-title" onCancel={event => { event.preventDefault(); close(); }} onClose={onClose}>
+    <div className="dialog-top"><span className="section-kicker">MY APPLICATIONS</span><button className="close-button" aria-label="신청 준비 닫기" onClick={close}>×</button></div>
     <h2 id="preparation-title">내 신청 준비</h2>
     <p className="planning-help">직접 기록한 준비 과정을 모아 보세요. 선정 결과와 실제 접수 상태는 해당 기관에서 확인해 주세요.</p>
+    {editing ? <><p>공고 번호: {editing}</p><ApplicationRecordEditor key={editing} id={editing} planning={planning} onDirtyChange={setDirty} /><button className="secondary-button" onClick={() => { if (mayLeave()) setEditing(null); }}>신청 준비 목록으로</button></> : <>
     <div className="preparation-sync">
       <p>{planning.account ? "계정에 저장되어 다른 기기에서도 이어갈 수 있어요." : "이 브라우저에 저장돼요. 로그인 후 이 기기의 기록을 가져올 수 있어요."}</p>
       {planning.account && <div className="preparation-actions">
@@ -91,7 +97,7 @@ export function PreparationDialog({ planning, onClose, onDetail }: {
     {!planning.ready && !planning.busy && planning.message ? <p>위의 ‘계정 기록 새로고침’을 눌러 다시 불러와 주세요.</p>
       : !planning.ready || loading ? <p role="status">신청 준비 정보를 불러오고 있어요…</p>
       : error ? <div role="alert"><p>공고 정보를 불러오지 못했어요. 준비 기록은 유지돼요.</p><button className="secondary-button" onClick={() => setRetry((n) => n + 1)}>다시 불러오기</button></div>
-      : shown.length === 0 ? <div className="planning-empty"><h3>{ids.length ? "선택한 조건에 맞는 기록이 없어요" : "신청 준비를 시작해 보세요"}</h3><p>{ids.length ? "다른 마감 조건이나 준비 상태를 선택해 보세요." : "공고 상세에서 체크리스트나 신청 상태·메모를 저장하면 여기에 모여요."}</p>{ids.length > 0 && <button className="secondary-button" onClick={() => { setFilter("all"); setDeadlineFilter("all"); setApplicationFilter("all"); }}>모든 준비 기록 보기</button>}<button className="primary-button" onClick={onClose}>혜택 둘러보기</button></div>
+      : shown.length === 0 ? <div className="planning-empty"><h3>{ids.length ? "선택한 조건에 맞는 기록이 없어요" : "신청 준비를 시작해 보세요"}</h3><p>{ids.length ? "다른 마감 조건이나 준비 상태를 선택해 보세요." : "공고 상세에서 체크리스트나 신청 상태·메모를 저장하면 여기에 모여요."}</p>{ids.length > 0 && <button className="secondary-button" onClick={() => { setFilter("all"); setDeadlineFilter("all"); setApplicationFilter("all"); }}>모든 준비 기록 보기</button>}<button className="primary-button" onClick={close}>혜택 둘러보기</button></div>
       : <ul className="preparation-list">{shown.map((id) => {
         const benefit = byId.get(id);
         const count = planning.data.checklists[id]?.length || 0;
@@ -105,6 +111,7 @@ export function PreparationDialog({ planning, onClose, onDetail }: {
           {benefit && <p>{benefit.organization} · {benefit.deadline ? `${benefit.deadline} · ${deadlineLabel(benefit.deadline, today)}` : benefit.periodLabel}</p>}
           <progress value={count} max={checklistSteps.length} aria-label={`${benefit?.title || id} 준비 진행률`} />
           <div className="preparation-actions">
+            <button className="secondary-button" disabled={!planning.ready || planning.busy} onClick={() => setEditing(id)}>신청 기록 편집</button>
             {benefit && <button className="primary-button" onClick={() => onDetail(id)}>준비 이어가기</button>}
             {benefit && <DeadlineCalendarButton benefit={benefit} today={today} />}
             <button className="text-button" disabled={planning.busy || !planning.ready} onClick={() => {
@@ -113,5 +120,6 @@ export function PreparationDialog({ planning, onClose, onDetail }: {
           </div>
         </li>;
       })}</ul>}
+    </>}
   </dialog>;
 }

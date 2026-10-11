@@ -30,3 +30,11 @@ test('guest saves read latest values, preserve in-memory fallback, and enforce t
  const unavailable=createGuestSavedStore({getItem(){throw Error();},setItem(){throw Error();}});unavailable.toggle('a');unavailable.toggle('b');assert.deepEqual(unavailable.getSnapshot().ids,['a','b']);
  assert.deepEqual(parseSaved('["",null,"a","a"]'),['a']);
 });
+
+test('explicit removal remains a removal when another tab already removed the item',()=>{
+ const entries=new Map([[savedKey,JSON.stringify(['a','b'])]]);
+ const storage={getItem:k=>entries.get(k)||null,setItem:(k,v)=>entries.set(k,v)};
+ const first=createGuestSavedStore(storage),second=createGuestSavedStore(storage);
+ second.toggle('a',true);first.toggle('a',true);
+ assert.deepEqual(first.getSnapshot().ids,['b']);
+});

@@ -39,6 +39,7 @@ export type Preferences = {
   category: string;
   notificationsEnabled: boolean;
 };
+const samePreferences = (left: Preferences, right: Preferences) => left.region === right.region && left.category === right.category && left.notificationsEnabled === right.notificationsEnabled;
 type Alert = {
   id: number;
   benefitId: string;
@@ -197,12 +198,12 @@ export function useAccount() {
     });
     if (session) void refresh();
   }, [session?.user.id, session?.access_token]);
-  async function toggle(id: string) {
+  async function toggle(id: string, removeOnly = false) {
     const epoch = sessionEpoch.current;
     if (busy) return;
     if (!session) {
       setError("");
-      guestStore.toggle(id);
+      guestStore.toggle(id, removeOnly);
       return;
     }
     if (!ready) {
@@ -213,9 +214,9 @@ export function useAccount() {
     setError("");
     try {
       const result = await request<string[]>(
-        remote.includes(id) ? `/saved/${encodeURIComponent(id)}` : "/saved",
-        remote.includes(id) ? "DELETE" : "POST",
-        remote.includes(id) ? undefined : { ids: [id] },
+        (removeOnly || remote.includes(id)) ? `/saved/${encodeURIComponent(id)}` : "/saved",
+        (removeOnly || remote.includes(id)) ? "DELETE" : "POST",
+        (removeOnly || remote.includes(id)) ? undefined : { ids: [id] },
       );
       if (sessionEpoch.current === epoch) setRemote(result);
     } catch (e) {
@@ -311,7 +312,17 @@ export function AccountPanel({
   useEffect(() => {
     dialog.current?.showModal();
   }, []);
-  useEffect(() => setPrefs(a.profile), [a.profile]);
+  const [baseline, setBaseline] = useState(a.profile);
+  const dirty = !samePreferences(prefs, baseline);
+  const mayLeave = () => !dirty || window.confirm("저장하지 않은 관심 조건을 버릴까요?");
+  const close = () => { if (mayLeave()) onClose(); };
+  useEffect(() => { if (a.ready && (!dirty || samePreferences(a.profile, prefs))) { setPrefs(a.profile); setBaseline(a.profile); } }, [a.profile, a.ready, dirty, prefs]);
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    addEventListener("beforeunload", warn);
+    return () => removeEventListener("beforeunload", warn);
+  }, [dirty]);
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!a.client) return;
@@ -354,7 +365,7 @@ export function AccountPanel({
     <dialog
       className="account-dialog"
       ref={dialog}
-      onCancel={onClose}
+      onCancel={event => { event.preventDefault(); close(); }}
       onClose={onClose}
       aria-labelledby="account-title"
     >
@@ -362,7 +373,7 @@ export function AccountPanel({
         <span className="section-kicker">MY BENEFITS</span>
         <button
           className="close-button"
-          onClick={onClose}
+          onClick={close}
           aria-label="내 계정 닫기"
         >
           ×
@@ -476,11 +487,13 @@ export function AccountPanel({
               className="secondary-button"
               disabled={pending}
               onClick={async () => {
+                if (!mayLeave()) return;
                 setPending(true);
-                const result = await a.client?.auth.signOut();
-                if (result?.error)
-                  setMessage("로그아웃하지 못했어요. 다시 시도해 주세요.");
-                setPending(false);
+                try {
+                  const result = await a.client?.auth.signOut();
+                  if (result?.error) throw result.error;
+                } catch { setMessage("로그아웃하지 못했어요. 다시 시도해 주세요."); }
+                finally { setPending(false); }
               }}
             >
               로그아웃
@@ -500,6 +513,8 @@ export function AccountPanel({
                 }}
               >
                 <h3>나의 관심 조건</h3>
+                <fieldset disabled={a.busy || pending}>
+                <legend className="sr-only">나의 관심 조건 입력</legend>
                 <div className="account-selects">
                   <label>
                     관심 지역
@@ -553,6 +568,7 @@ export function AccountPanel({
                     type="button"
                     className="secondary-button"
                     onClick={() => {
+                      if (dirty && !window.confirm("변경한 조건을 계정에 저장하지 않고 이번 검색에만 적용할까요?")) return;
                       onApply(prefs);
                       onClose();
                     }}
@@ -560,6 +576,9 @@ export function AccountPanel({
                     이 조건으로 찾아보기
                   </button>
                 </div>
+                </fieldset>
+                {dirty && <p role="status">아직 저장하지 않은 관심 조건이 있어요. 새로고침해도 작성 중인 내용은 유지돼요.</p>}
+                {dirty && <button type="button" className="text-button" disabled={a.busy || pending} onClick={() => { if (mayLeave()) { setPrefs(a.profile); setBaseline(a.profile); } }}>저장된 조건 불러오기</button>}
               </form>
               {a.guest.length > 0 && (
                 <div className="account-note">
@@ -592,6 +611,7 @@ export function AccountPanel({
                       <li key={n.id} className={n.read ? "is-read" : ""}>
                         <button
                           onClick={() => {
+                            if (!mayLeave()) return;
                             void a.readAlert(n);
                             onOpen(n.benefitId);
                             onClose();

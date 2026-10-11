@@ -240,3 +240,119 @@ test('demo reports have empty history and benefit provenance uses explicit sourc
  await expect(page.locator('.data-report-dialog')).toContainText('가상 예시 공고의 현황');
  await expect(page.locator('.data-report-dialog')).toContainText('아직 업데이트 이력이 없어요');
 });
+
+test('unavailable favorites can be removed while application records survive', async ({page}) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('benefit-saved', JSON.stringify(['a', 'missing']));
+    localStorage.setItem('benefit-planning:v2:guest', JSON.stringify({version:1,compareIds:[],checklists:{},applications:{missing:{status:'submitted',note:'보관할 기록'}}}));
+  });
+  await page.goto('/?view=saved');
+  await page.getByRole('button',{name:'관심목록 관리',exact:true}).click();
+  const dialog=page.getByRole('dialog',{name:'관심목록 관리'});
+  await expect(dialog).toContainText('조회 중단 1개');
+  page.once('dialog',d=>d.dismiss());
+  await dialog.locator('li').filter({hasText:'공고 번호: missing'}).getByRole('button',{name:'관심 해제'}).click();
+  await expect(dialog.locator('li')).toHaveCount(2);
+  page.once('dialog',d=>d.accept());
+  await dialog.locator('li').filter({hasText:'공고 번호: missing'}).getByRole('button',{name:'관심 해제'}).click();
+  await expect(dialog.locator('li')).toHaveCount(1);
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('benefit-planning:v2:guest')!).applications.missing.note)).toBe('보관할 기록');
+  await page.getByLabel('관심목록 관리 닫기').click();
+  await page.getByRole('button',{name:'신청 준비 1',exact:true}).click();
+  await page.getByRole('button',{name:'신청 기록 편집',exact:true}).click();
+  await page.getByLabel('내 메모',{exact:true}).fill('종료 후에도 수정');
+  page.once('dialog',d=>d.dismiss()); await page.keyboard.press('Escape');
+  await expect(page.getByLabel('내 메모',{exact:true})).toHaveValue('종료 후에도 수정');
+  page.once('dialog',d=>d.dismiss()); await page.getByRole('button',{name:'신청 준비 목록으로'}).click();
+  await expect(page.getByLabel('내 메모',{exact:true})).toBeVisible();
+  await page.getByLabel('신청 상태',{exact:true}).selectOption('approved');
+  await page.getByRole('button',{name:'신청 기록 저장',exact:true}).click();
+  await expect(page.locator('.application-record')).toContainText('저장된 신청 기록');
+  await page.getByRole('button',{name:'신청 준비 목록으로'}).click();
+  await expect(page.locator('.preparation-list')).toContainText('종료 후에도 수정');
+  await expect(page.locator('.preparation-list')).toContainText('선정');
+  await page.setViewportSize({width:390,height:844});
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
+
+test('favorite lookup errors are retryable and never classify records as unavailable', async ({page}) => {
+  await page.addInitScript(()=>localStorage.setItem('benefit-saved',JSON.stringify(['a'])));
+  let fail=true;
+  await page.route('**/api/benefits?**',r=>new URL(r.request().url()).searchParams.get('size')==='100' && fail ? r.fulfill({status:503,json:{}}) : r.fallback());
+  await page.goto('/?view=saved'); await page.getByRole('button',{name:'관심목록 관리',exact:true}).click();
+  const dialog=page.getByRole('dialog',{name:'관심목록 관리'});
+  await expect(dialog).toContainText('공고를 확인하지 못했어요');
+  await expect(dialog.getByRole('button',{name:'관심 해제'})).toHaveCount(0);
+  fail=false; await dialog.getByRole('button',{name:'다시 불러오기'}).click();
+  await expect(dialog).toContainText('강남 주거 지원');
+});
+
+test('preference drafts survive refresh and failed saves, and guard close, logout and search', async ({page}) => {
+  await member(page);
+  let profile={region:'서울',category:'주거',notificationsEnabled:false};
+  let fail=true;
+  await page.route('**/api/account/profile', r=>{
+    if(r.request().method()==='PUT') {
+      if(fail)return r.fulfill({status:503,json:{}});
+      profile=r.request().postDataJSON();
+    }
+    return r.fulfill({json:profile});
+  });
+  await page.goto('/');await page.getByRole('button',{name:/내 계정/}).click();
+  await expect(page.getByRole('combobox',{name:'관심 지역',exact:true})).toHaveValue('서울');
+  await page.getByRole('combobox',{name:'관심 지역',exact:true}).selectOption('부산');
+  profile={...profile,region:'경기'};
+  await page.getByRole('button',{name:'계정 정보 새로고침',exact:true}).click();
+  await expect(page.getByRole('button',{name:'조건 저장',exact:true})).toBeEnabled();
+  await expect(page.getByRole('combobox',{name:'관심 지역',exact:true})).toHaveValue('부산');
+  for(const action of [()=>page.keyboard.press('Escape'),()=>page.getByLabel('내 계정 닫기').click(),()=>page.getByRole('button',{name:'로그아웃',exact:true}).click(),()=>page.getByRole('button',{name:'이 조건으로 찾아보기',exact:true}).click()]) {
+    page.once('dialog',d=>d.dismiss()); await action();
+    await expect(page.getByRole('combobox',{name:'관심 지역',exact:true})).toHaveValue('부산');
+  }
+  await page.getByRole('button',{name:'조건 저장',exact:true}).click();
+  await expect(page.getByRole('alert')).toContainText('연결이 지연');
+  await expect(page.getByRole('combobox',{name:'관심 지역',exact:true})).toHaveValue('부산');
+  fail=false; await page.getByRole('button',{name:'조건 저장',exact:true}).click();
+  await expect(page.getByText('맞춤 조건을 저장했어요.',{exact:true})).toBeVisible();
+  await expect(page.getByText(/아직 저장하지 않은 관심 조건/)).toHaveCount(0);
+  await page.getByLabel('내 계정 닫기').click();
+  await page.getByRole('button',{name:/내 계정/}).click();
+  await expect(page.getByRole('combobox',{name:'관심 지역',exact:true})).toHaveValue('부산');
+});
+
+test('member saved management spans batches, retains failed removals and hides records on logout', async ({page}) => {
+  await member(page);
+  let saved=['a',...Array.from({length:100},(_,i)=>`missing-${i}`)];
+  let fail=true;
+  const batches:number[]=[];
+  await page.route('**/api/benefits?**',r=>{
+    const params=new URL(r.request().url()).searchParams;
+    if(params.get('size')==='100')batches.push(params.getAll('ids').length);
+    return r.fallback();
+  });
+  await page.route('**/api/account/saved',r=>r.fulfill({json:saved}));
+  await page.route('**/api/account/saved/*',r=>{
+    expect(r.request().method()).toBe('DELETE');
+    if(fail)return r.fulfill({status:503,json:{}});
+    saved=saved.filter(id=>id!==decodeURIComponent(new URL(r.request().url()).pathname.split('/').pop()!));
+    return r.fulfill({json:saved});
+  });
+  await page.goto('/?view=saved');await expect(page.getByRole('button',{name:'관심 혜택 101',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'관심목록 관리',exact:true}).click();
+  const dialog=page.getByRole('dialog',{name:'관심목록 관리'});
+  await expect(dialog.locator('li')).toHaveCount(101);
+  expect(batches).toContain(100);expect(batches).toContain(1);
+  const target=dialog.locator('li').filter({hasText:'공고 번호: missing-99'});
+  page.once('dialog',d=>d.accept());await target.getByRole('button',{name:'관심 해제'}).click();
+  await expect(dialog.getByRole('alert')).toContainText('연결이 지연');
+  await expect(dialog.locator('li')).toHaveCount(101);
+  fail=false;page.once('dialog',d=>d.accept());await target.getByRole('button',{name:'관심 해제'}).click();
+  await expect(dialog.locator('li')).toHaveCount(100);
+  await page.getByLabel('관심목록 관리 닫기').click();
+  await page.getByRole('button',{name:/내 계정/}).click();
+  await page.getByRole('button',{name:'로그아웃',exact:true}).click();
+  await page.getByLabel('내 계정 닫기').click();
+  await page.getByRole('button',{name:'관심목록 관리',exact:true}).click();
+  await expect(dialog).toContainText('저장한 관심 공고가 없어요');
+  await expect(dialog).not.toContainText('missing-');
+});

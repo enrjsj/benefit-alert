@@ -13,6 +13,7 @@ import { StrictMode, useEffect, useRef, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import "./style.css";
 import type { Benefit } from "./benefit";
+import { SavedDialog } from "./SavedDialog";
 import { PreparationDialog } from "./PreparationDialog";
 import {
   usePlanning,
@@ -153,6 +154,7 @@ const districtCache = createDistrictCache((() => {
 const regions = searchRegions;
 function initialParams() { return readSearchState(location.search); }
 function App() {
+  const [savedManagerOwner, setSavedManagerOwner] = useState<string | null>(null);
   const account = useAccount();
   const saved = account.saved;
   const planningOwner = account.session?.user.id || "guest";
@@ -695,6 +697,7 @@ function App() {
                   )}
                 </h2>
               </div>
+              {savedOnly && <button className="secondary-button" onClick={() => setSavedManagerOwner(planningOwner)}>관심목록 관리</button>}
               <label className="sort-field">
                 <span className="sr-only">목록 정렬</span>
                 <select value={sort} onChange={(e) => setSort(e.target.value)}>
@@ -1223,9 +1226,10 @@ function App() {
           </button>
         </section>
       )}
+      {savedManagerOwner === planningOwner && <SavedDialog key={planningOwner} account={account} onClose={() => setSavedManagerOwner(null)} />}
       {dataReportOpen && <DataReportDialog onClose={() => setDataReportOpen(false)} />}
       {accountOpen && (
-        <AccountPanel
+        <AccountPanel key={planningOwner}
           account={account}
           onClose={() => setAccountOpen(false)}
           onOpen={openDetail}
