@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import type { PlanningState } from "./PlanningPanel";
 import { applicationStatuses, sameApplication, type ApplicationRecord, type ApplicationStatus } from "./planning";
 
@@ -13,7 +13,7 @@ export function ApplicationRecordEditor({ id, planning, onDirtyChange }: {
   useEffect(() => {
     if (!dirty || sameApplication(stored, draft)) { setDraft(stored || blank); setBaseline(stored); }
   }, [stored, dirty]);
-  useEffect(() => { onDirtyChange(dirty); return () => onDirtyChange(false); }, [dirty, onDirtyChange]);
+  useLayoutEffect(() => { onDirtyChange(dirty); return () => onDirtyChange(false); }, [dirty, onDirtyChange]);
   useEffect(() => {
     if (!dirty) return;
     const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
