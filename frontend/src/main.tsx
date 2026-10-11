@@ -873,6 +873,7 @@ function App() {
                         className={`bookmark-button ${saved.includes(b.id) ? "is-saved" : ""}`}
                         aria-label={`${b.title} 관심목록 ${saved.includes(b.id) ? "해제" : "저장"}`}
                         aria-pressed={saved.includes(b.id)}
+                        disabled={account.busy || (!!account.session && !account.ready)}
                         onClick={() => toggle(b.id)}
                       >
                         <Icon name="bookmark" />
@@ -1169,6 +1170,7 @@ function App() {
               </button>
               <button
                 className="secondary-button"
+                disabled={account.busy || (!!account.session && !account.ready)}
                 onClick={() => toggle(selected.id)}
               >
                 <Icon name="bookmark" />

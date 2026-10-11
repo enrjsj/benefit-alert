@@ -71,6 +71,9 @@ export function useAccount() {
     [busy, setBusy] = useState(false),
     [ready, setReady] = useState(false),
     [recovery, setRecovery] = useState(false);
+  const [alertsError, setAlertsError] = useState("");
+  const [alertsBusy, setAlertsBusy] = useState(false);
+  const alertsRequest = useRef(0);
   const [revision, setRevision] = useState(0);
   const current = useRef(session);
   const sessionEpoch = useRef(0);
@@ -164,21 +167,28 @@ export function useAccount() {
       throw Error("계정이 변경되었어요.");
     return result as T;
   }
+  async function refreshAlerts() {
+    const epoch = sessionEpoch.current;
+    const sequence = ++alertsRequest.current;
+    setAlertsBusy(true); setAlertsError("");
+    try {
+      const result = await request<Alert[]>("/notifications");
+      if (epoch === sessionEpoch.current && sequence === alertsRequest.current) setAlerts(result);
+    } catch {
+      if (epoch === sessionEpoch.current && sequence === alertsRequest.current)
+        setAlertsError("알림을 불러오지 못했어요. 마지막으로 확인한 알림을 표시해요.");
+    } finally {
+      if (epoch === sessionEpoch.current && sequence === alertsRequest.current) setAlertsBusy(false);
+    }
+  }
   async function refresh() {
     const epoch = sessionEpoch.current;
-    setError("");
-    setBusy(true);
+    setError(""); setBusy(true);
+    void refreshAlerts();
     try {
-      const [p, s, a] = await Promise.all([
-        request<Preferences>("/profile"),
-        request<string[]>("/saved"),
-        request<Alert[]>("/notifications"),
-      ]);
+      const [p, s] = await Promise.all([request<Preferences>("/profile"), request<string[]>("/saved")]);
       if (sessionEpoch.current !== epoch) return;
-      setProfile(p);
-      setRemote(s);
-      setAlerts(a);
-      setReady(true);
+      setProfile(p); setRemote(s); setReady(true);
     } catch (e) {
       if (sessionEpoch.current === epoch) setError((e as Error).message);
     } finally {
@@ -188,6 +198,7 @@ export function useAccount() {
   useEffect(() => {
     setRemote([]);
     setAlerts([]);
+    setAlertsError(""); setAlertsBusy(false);
     setReady(false);
     setBusy(false);
     setError("");
@@ -233,9 +244,7 @@ export function useAccount() {
       const profile = await request<Preferences>("/profile", "PUT", p);
       if (sessionEpoch.current !== epoch) return false;
       setProfile(profile);
-      const alerts = await request<Alert[]>("/notifications");
-      if (sessionEpoch.current !== epoch) return false;
-      setAlerts(alerts);
+      void refreshAlerts();
       return true;
     } catch (e) {
       if (sessionEpoch.current === epoch) setError((e as Error).message);
@@ -277,6 +286,9 @@ export function useAccount() {
     guest,
     profile,
     alerts,
+    alertsError,
+    alertsBusy,
+    refreshAlerts,
     error,
     busy,
     ready,
@@ -599,9 +611,11 @@ export function AccountPanel({
                 <h3>
                   내 알림 <span>{a.alerts.filter((n) => !n.read).length}</span>
                 </h3>
+                <button className="text-button" disabled={a.alertsBusy} onClick={a.refreshAlerts}>{a.alertsBusy ? "알림 불러오는 중…" : "알림 새로고침"}</button>
+                {a.alertsError && <p role="alert">{a.alertsError}</p>}
                 {a.alerts.length === 0 ? (
                   <p>
-                    {a.profile.notificationsEnabled
+                    {a.alertsError ? "알림 새로고침으로 다시 확인해 주세요." : a.alertsBusy ? "알림을 확인하고 있어요…" : a.profile.notificationsEnabled
                       ? "아직 새로운 알림이 없어요."
                       : "사이트 내 알림을 켜면 여기에서 확인할 수 있어요."}
                   </p>

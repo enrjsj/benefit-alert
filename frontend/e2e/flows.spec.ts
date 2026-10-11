@@ -356,3 +356,46 @@ test('member saved management spans batches, retains failed removals and hides r
   await expect(dialog).toContainText('저장한 관심 공고가 없어요');
   await expect(dialog).not.toContainText('missing-');
 });
+
+test('preparation search includes unavailable notes and exports the complete saved data',async({page})=>{
+ await page.addInitScript(()=>localStorage.setItem('benefit-planning:v2:guest',JSON.stringify({version:1,compareIds:['b'],checklists:{a:['documents']},applications:{missing:{status:'approved',note:'검증 메모'}}})));
+ await page.goto('/');await page.getByRole('button',{name:'신청 준비 2',exact:true}).click();
+ await expect(page.locator('.preparation-list li')).toHaveCount(2);
+ await page.getByRole('searchbox',{name:'신청 기록 검색'}).fill('검증 메모');
+ await expect(page.locator('.preparation-list li')).toHaveCount(1);
+ await expect(page.locator('.preparation-list')).toContainText('더 이상 제공되지 않는 공고');
+ const jsonDownload=page.waitForEvent('download');await page.getByRole('button',{name:'전체 기록 JSON 다운로드'}).click();
+ const json=await (await jsonDownload).createReadStream();let content='';for await(const chunk of json!)content+=chunk;
+ const data=JSON.parse(content);expect(data.planning.checklists.a).toEqual(['documents']);expect(data.planning.applications.missing.note).toBe('검증 메모');expect(data.planning.compareIds).toEqual(['b']);
+ const csvDownload=page.waitForEvent('download');await page.getByRole('button',{name:'전체 기록 CSV 다운로드'}).click();
+ const csv=await (await csvDownload).createReadStream();let csvText='';for await(const chunk of csv!)csvText+=chunk;
+ expect(csvText).toContain('강남 주거 지원');expect(csvText).toContain('검증 메모');
+ await page.getByRole('searchbox',{name:'신청 기록 검색'}).fill('없는 검색어');
+ await page.getByRole('button',{name:'모든 준비 기록 보기'}).click();await expect(page.locator('.preparation-list li')).toHaveCount(2);
+ await page.setViewportSize({width:390,height:844});expect(await page.locator('.preparation-dialog').evaluate(e=>e.scrollWidth<=e.clientWidth)).toBe(true);
+});
+
+test('failed notifications do not block favorites or make a successful profile save look failed',async({page})=>{
+ await member(page);let fail=true;let profile={region:'서울',category:'주거',notificationsEnabled:true};
+ await page.route('**/api/account/notifications',r=>r.fulfill(fail?{status:503,json:{}}:{json:[{id:1,benefitId:'a',title:'복구된 알림',kind:'new',read:false}]}));
+ await page.route('**/api/account/profile',r=>{if(r.request().method()==='PUT')profile=r.request().postDataJSON();return r.fulfill({json:profile});});
+ await page.route('**/api/account/saved',r=>r.fulfill({json:['a']}));
+ await page.goto('/');await expect(page.getByRole('button',{name:'관심 혜택 1',exact:true})).toBeVisible();
+ await page.getByRole('button',{name:/내 계정/}).click();
+ await expect(page.getByRole('combobox',{name:'관심 지역',exact:true})).toHaveValue('서울');
+ await expect(page.locator('.inbox')).toContainText('알림을 불러오지 못했어요');
+ await page.getByRole('combobox',{name:'관심 지역',exact:true}).selectOption('부산');await page.getByRole('button',{name:'조건 저장',exact:true}).click();
+ await expect(page.getByText('맞춤 조건을 저장했어요.',{exact:true})).toBeVisible();expect(profile.region).toBe('부산');
+ fail=false;await page.getByRole('button',{name:'알림 새로고침',exact:true}).click();await expect(page.locator('.inbox')).toContainText('복구된 알림');
+ fail=true;await page.getByRole('button',{name:'알림 새로고침',exact:true}).click();await expect(page.locator('.inbox')).toContainText('알림을 불러오지 못했어요');await expect(page.locator('.inbox')).toContainText('복구된 알림');
+});
+
+test('pending notifications allow profile use and late responses cannot reappear after logout',async({page})=>{
+ await member(page);let release:()=>void=()=>{};let held=false;
+ await page.route('**/api/account/notifications',async r=>{await new Promise<void>(resolve=>{release=resolve;held=true;});await r.fulfill({json:[{id:1,benefitId:'a',title:'이전 계정 알림',kind:'new',read:false}]});});
+ await page.goto('/');await page.getByRole('button',{name:/내 계정/}).click();
+ await expect(page.getByRole('button',{name:'조건 저장',exact:true})).toBeEnabled();await expect.poll(()=>held).toBe(true);
+ await page.getByRole('button',{name:'로그아웃',exact:true}).click();await expect(page.getByRole('heading',{name:'로그인하고 이어서 모아보세요'})).toBeVisible();
+ release();await expect(page.getByText('이전 계정 알림',{exact:true})).toHaveCount(0);
+ await expect(page.getByRole('button',{name:'조건 저장',exact:true})).toHaveCount(0);
+});
