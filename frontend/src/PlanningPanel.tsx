@@ -1,3 +1,4 @@
+import { applyReviewedImport, type ImportChoices } from "./planningImport";
 import { fetchJsonResponse } from "./request";
 import {
   useEffect,
@@ -15,7 +16,6 @@ import {
   setChecklistStep,
   toggleCompare,
   readPlanning,
-  mergePlanning,
   setApplication,
   type ApplicationRecord,
   type Planning,
@@ -25,11 +25,11 @@ const base = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 type PlannerStore = {
   getSnapshot: () => { data: Planning; message: string; busy?: boolean; ready?: boolean; applicationsSupported?: boolean };
   subscribe: (fn: () => void) => () => void;
-  reload: () => void | Promise<void>;
-  update: (change: (data: Planning) => Planning) => void | Promise<void>;
+  reload: () => void | Promise<void | boolean>;
+  update: (change: (data: Planning) => Planning) => boolean | void | Promise<void | boolean>;
   start?: () => void;
   stop?: () => void;
-  importData?: (data: Planning) => void | Promise<void>;
+  importData?: (data: Planning) => boolean | void | Promise<void | boolean>;
   report?: (message: string) => void;
 };
 export function usePlanning(owner: string, token?: string) {
@@ -71,13 +71,14 @@ export function usePlanning(owner: string, token?: string) {
     ready: snapshot.ready ?? true,
     applicationsSupported: !token || snapshot.applicationsSupported === true,
     refresh: () => store.reload(),
-    importLocal: () => {
-      if (!store.importData) return;
-      try {
-        const guest = readPlanning(localStorage, planningKey("guest"));
-        const legacy = readPlanning(localStorage, key);
-        void store.importData(mergePlanning(legacy, guest));
-      } catch (error) { store.report?.((error as Error).message); }
+    localSources: () => {
+      const guest = readPlanning(localStorage, planningKey("guest"));
+      const legacy = readPlanning(localStorage, key);
+      return [{ label: "이 브라우저의 비회원 기록", data: guest }, { label: "이 브라우저의 이전 계정 기록", data: legacy }];
+    },
+    importReviewed: (incoming: Planning, baseline: Planning, choices: ImportChoices, includeCompare: boolean) => {
+      if (token && !snapshot.applicationsSupported) { store.report?.("계정 기록을 새로고침한 뒤 다시 시도해 주세요."); return false; }
+      return store.update(current => applyReviewedImport(current, baseline, incoming, choices, includeCompare));
     },
     removeChecklist: (id: string) => store.update((s: Planning) => {
       const checklists = { ...s.checklists };

@@ -191,6 +191,7 @@ export function createPlanningStore(
       }
     },
     update(change: (state: Planning) => Planning) {
+      let success = false;
       let previous = snapshot.data;
       try {
         // Read before writing so changes from another tab are retained.
@@ -213,10 +214,12 @@ export function createPlanningStore(
             "브라우저에 저장하지 못했어요. 이번 방문에만 기억하므로 창을 닫기 전에 확인해 주세요.";
         }
         snapshot = { data, message };
+        success = true;
       } catch (e) {
         snapshot = { ...snapshot, data: previous, message: (e as Error).message };
       }
       emit();
+      return success;
     },
   };
 }

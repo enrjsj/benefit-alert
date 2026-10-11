@@ -19,7 +19,7 @@ export function createRemotePlanningStore(request: Request) {
   const emit = () => listeners.forEach((fn) => fn());
   const set = (patch: Partial<RemoteSnapshot>) => { snapshot = { ...snapshot, ...patch }; emit(); };
   async function run(method: string, body?: unknown, importing = false) {
-    if (!active || snapshot.busy) return;
+    if (!active || snapshot.busy) return false;
     const generation = epoch;
     controller = new AbortController();
     const signal = controller.signal;
@@ -27,15 +27,15 @@ export function createRemotePlanningStore(request: Request) {
     set({ busy: true, message: "" });
     try {
       const response = await request(method, body, signal, importing);
-      if (!current()) return;
+      if (!current()) return false;
       if (response.status === 409) {
         const latest = await request("GET", undefined, signal);
         if (!latest.ok) throw Error("최신 기록을 불러오지 못했어요. 새로고침 후 다시 시도해 주세요.");
         const value = await latest.json();
-        if (!current()) return;
+        if (!current()) return false;
         accept(value);
         set({ message: "다른 기기에서 기록이 변경됐어요. 최신 기록을 불러왔으니 변경할 항목을 다시 선택해 주세요." });
-        return;
+        return false;
       }
       if (!response.ok) throw Error(response.status === 401
         ? "로그인 상태를 다시 확인해 주세요."
@@ -45,11 +45,13 @@ export function createRemotePlanningStore(request: Request) {
           ? "비교 3개·신청 준비 200개·메모 1,000자 한도를 확인한 뒤 다시 시도해 주세요."
           : "계정 기록을 저장하거나 불러오지 못했어요. 연결을 확인하고 다시 시도해 주세요.");
       const value = await response.json();
-      if (!current()) return;
+      if (!current()) return false;
       accept(value);
       if (importing) set({ message: "이 기기의 신청 준비 기록을 계정에 가져왔어요. 기존 기록은 유지돼요." });
+      return true;
     } catch (error) {
       if (current()) set({ message: (error as Error).message });
+      return false;
     } finally {
       if (current()) set({ busy: false });
     }
@@ -66,12 +68,12 @@ export function createRemotePlanningStore(request: Request) {
     stop() { active = false; epoch++; controller?.abort(); },
     reload() { return run("GET"); },
     update(change: (data: Planning) => Planning) {
-      if (!snapshot.ready || snapshot.busy || !active) return;
+      if (!snapshot.ready || snapshot.busy || !active) return false;
       try { return run("PUT", { revision: snapshot.revision, data: change(snapshot.data) }); }
-      catch (error) { set({ message: (error as Error).message }); }
+      catch (error) { set({ message: (error as Error).message }); return false; }
     },
     importData(data: Planning) {
-      if (!snapshot.ready || snapshot.busy || !active) return;
+      if (!snapshot.ready || snapshot.busy || !active) return false;
       if (!snapshot.applicationsSupported && Object.keys(data.applications || {}).length) {
         set({ message: "계정 기록을 새로고침한 뒤 다시 가져와 주세요. 이 기기의 상태와 메모는 유지돼요." }); return;
       }

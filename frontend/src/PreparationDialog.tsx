@@ -1,3 +1,4 @@
+import { PlanningImportPanel } from "./PlanningImportPanel";
 import { exportPlanning, matchesPlanningSearch } from "./planningExport";
 import { ApplicationRecordEditor } from "./ApplicationRecordEditor";
 import { fetchJsonResponse } from "./request";
@@ -12,6 +13,7 @@ const base = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 export function PreparationDialog({ planning, onClose, onDetail }: {
   planning: PlanningState; onClose: () => void; onDetail: (id: string) => void;
 }) {
+  const [availability, setAvailability] = useState("all");
   const [query, setQuery] = useState("");
   const [exportMessage, setExportMessage] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
@@ -73,6 +75,7 @@ export function PreparationDialog({ planning, onClose, onDetail }: {
   const completed = ids.filter((id) => planning.data.checklists[id]?.length === checklistSteps.length);
   const byId = new Map(items.map(item => [item.id, item]));
   const shown = ids.filter(id => (filter === "all" || (filter === "done" ? completed.includes(id) : !completed.includes(id)))
+    && (availability === "all" || (availability === "missing" ? !byId.has(id) : byId.has(id)))
     && matchesPlanningSearch(id, planning.data, byId.get(id), query)
     && matchesDeadline(byId.get(id), deadlineFilter, today)
     && (applicationFilter === "all" || planning.data.applications[id]?.status === applicationFilter));
@@ -88,20 +91,27 @@ export function PreparationDialog({ planning, onClose, onDetail }: {
         <button className="secondary-button" disabled={!planning.ready || planning.busy} onClick={() => download("json")}>전체 기록 JSON 다운로드</button>
         <button className="secondary-button" disabled={!planning.ready || planning.busy || loading} onClick={() => download("csv")}>전체 기록 CSV 다운로드</button>
       </div>
-      <p className="planning-help">검색 조건과 관계없이 저장된 전체 기록을 내려받아요. JSON에는 비교 목록도 포함돼요. 파일에는 개인 메모가 포함되며, 파일 가져오기는 아직 지원하지 않아요.</p>
+      <p className="planning-help">검색 조건과 관계없이 저장된 전체 기록을 내려받아요. JSON에는 비교 목록도 포함돼요. 파일에는 개인 메모가 포함돼요. JSON 파일은 아래 가져오기에서 다시 합칠 수 있어요.</p>
       {exportMessage && <p role="status">{exportMessage}</p>}
     </section>
+    <PlanningImportPanel planning={planning} items={items} />
     <label className="preparation-search">신청 기록 검색<input type="search" value={query} maxLength={200} placeholder="공고 제목, 기관, 번호, 내 메모" onChange={event => setQuery(event.target.value)} /></label>
     <div className="preparation-sync">
       <p>{planning.account ? "계정에 저장되어 다른 기기에서도 이어갈 수 있어요." : "이 브라우저에 저장돼요. 로그인 후 이 기기의 기록을 가져올 수 있어요."}</p>
       {planning.account && <div className="preparation-actions">
         <button className="secondary-button" disabled={planning.busy} onClick={planning.refresh}>계정 기록 새로고침</button>
-        <button className="secondary-button" disabled={planning.busy || !planning.ready} onClick={planning.importLocal}>이 기기 기록 가져오기</button>
+
       </div>}
       {planning.busy && <p role="status">계정 기록을 동기화하고 있어요…</p>}
       {planning.message && <p role="status" className="planning-message">{planning.message}</p>}
     </div>
+    {planning.ready && <section className="preparation-summary" aria-label="신청 준비 현황">
+      <p>전체 {ids.length}개 · 준비 확인 완료 {completed.length}개 · 신청 완료 {ids.filter(id => planning.data.applications[id]?.status === "submitted").length}개 · 선정 {ids.filter(id => planning.data.applications[id]?.status === "approved").length}개</p>
+      {!loading && !error && <p>7일 이내 마감 {ids.filter(id => matchesDeadline(byId.get(id), "week", today)).length}개 · 조회 중단 {ids.filter(id => !byId.has(id)).length}개</p>}
+      <p className="planning-help">직접 저장한 기록 기준이에요. 조회 중단은 기관의 선정 결과를 의미하지 않아요.</p>
+    </section>}
     <div className="preparation-deadlines">
+      <label>공고 제공 상태<select aria-label="신청 준비 공고 제공 상태" value={availability} onChange={event => setAvailability(event.target.value)}><option value="all">모든 공고</option><option value="available">조회 가능한 공고</option><option value="missing">조회 중단 공고</option></select></label>
       <label>신청 상태<select aria-label="신청 준비 신청 상태" value={applicationFilter} onChange={event => setApplicationFilter(event.target.value)}>
         <option value="all">모든 신청 상태</option>
         {Object.entries(applicationStatuses).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
@@ -122,7 +132,7 @@ export function PreparationDialog({ planning, onClose, onDetail }: {
     {!planning.ready && !planning.busy && planning.message ? <p>위의 ‘계정 기록 새로고침’을 눌러 다시 불러와 주세요.</p>
       : !planning.ready || loading ? <p role="status">신청 준비 정보를 불러오고 있어요…</p>
       : error ? <div role="alert"><p>공고 정보를 불러오지 못했어요. 준비 기록은 유지돼요.</p><button className="secondary-button" onClick={() => setRetry((n) => n + 1)}>다시 불러오기</button></div>
-      : shown.length === 0 ? <div className="planning-empty"><h3>{ids.length ? "선택한 조건에 맞는 기록이 없어요" : "신청 준비를 시작해 보세요"}</h3><p>{ids.length ? "검색어를 지우거나 다른 마감 조건·신청 상태를 선택해 보세요." : "공고 상세에서 체크리스트나 신청 상태·메모를 저장하면 여기에 모여요."}</p>{ids.length > 0 && <button className="secondary-button" onClick={() => { setFilter("all"); setDeadlineFilter("all"); setApplicationFilter("all"); setQuery(""); }}>모든 준비 기록 보기</button>}<button className="primary-button" onClick={close}>혜택 둘러보기</button></div>
+      : shown.length === 0 ? <div className="planning-empty"><h3>{ids.length ? "선택한 조건에 맞는 기록이 없어요" : "신청 준비를 시작해 보세요"}</h3><p>{ids.length ? "검색어를 지우거나 다른 마감 조건·신청 상태를 선택해 보세요." : "공고 상세에서 체크리스트나 신청 상태·메모를 저장하면 여기에 모여요."}</p>{ids.length > 0 && <button className="secondary-button" onClick={() => { setFilter("all"); setDeadlineFilter("all"); setApplicationFilter("all"); setQuery(""); setAvailability("all"); }}>모든 준비 기록 보기</button>}<button className="primary-button" onClick={close}>혜택 둘러보기</button></div>
       : <ul className="preparation-list">{shown.map((id) => {
         const benefit = byId.get(id);
         const count = planning.data.checklists[id]?.length || 0;

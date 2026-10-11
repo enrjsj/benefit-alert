@@ -399,3 +399,91 @@ test('pending notifications allow profile use and late responses cannot reappear
  release();await expect(page.getByText('이전 계정 알림',{exact:true})).toHaveCount(0);
  await expect(page.getByRole('button',{name:'조건 저장',exact:true})).toHaveCount(0);
 });
+
+const importFile=(planning:unknown)=>({name:'benefit-records.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({format:'benefit-alert-planning',version:1,planning}))});
+const importData={version:1,compareIds:['d'],checklists:{a:['documents'],missing:['schedule']},applications:{a:{status:'approved',note:'파일에서 가져온 메모'},missing:{status:'submitted',note:'중단 공고 기록'}}};
+async function openImport(page:Page,count:number){await page.getByRole('button',{name:`신청 준비 ${count}`,exact:true}).click();await page.getByText('파일·기기 기록 가져오기',{exact:true}).click();}
+
+test('file import previews conflicts, resolves comparison overflow and persists selected records',async({page})=>{
+ await page.addInitScript(()=>{if(!localStorage.getItem('benefit-planning:v2:guest'))localStorage.setItem('benefit-planning:v2:guest',JSON.stringify({version:1,compareIds:['a','b','c'],checklists:{a:['eligibility']},applications:{a:{status:'submitted',note:'현재 메모'}}}));});
+ await page.goto('/');await openImport(page,1);await page.getByLabel('JSON 기록 파일',{exact:true}).setInputFiles(importFile(importData));
+ const preview=page.getByRole('region',{name:'가져오기 미리보기'});await expect(preview).toContainText('선택 필요 1개');
+ await page.setViewportSize({width:390,height:844});expect(await page.locator('.preparation-dialog').evaluate(e=>e.scrollWidth<=e.clientWidth)).toBe(true);
+ await expect(page.getByRole('button',{name:'선택한 내용 가져오기'})).toBeDisabled();
+ await page.getByRole('radio',{name:/가져온 기록 사용/}).check();await expect(preview).toContainText('비교는 합쳐서 3개');
+ await page.getByRole('checkbox',{name:/비교 목록 1개도 합치기/}).uncheck();
+ page.once('dialog',d=>d.dismiss());await page.getByRole('button',{name:'선택한 내용 가져오기'}).click();await expect(preview).toBeVisible();
+ page.once('dialog',d=>d.accept());await page.getByRole('button',{name:'선택한 내용 가져오기'}).click();
+ await expect(page.locator('.planning-import')).toContainText('선택한 기록을 반영했어요');
+ const stored=await page.evaluate(()=>JSON.parse(localStorage.getItem('benefit-planning:v2:guest')!));
+ expect(stored.compareIds).toEqual(['a','b','c']);expect(stored.checklists.a).toEqual(['eligibility','documents']);expect(stored.applications.a.note).toBe('파일에서 가져온 메모');expect(stored.applications.missing.note).toBe('중단 공고 기록');
+ await page.getByLabel('신청 준비 공고 제공 상태').selectOption('missing');await expect(page.locator('.preparation-list').filter({has:page.locator('progress')}).locator('li')).toHaveCount(1);
+ await expect(page.getByRole('region',{name:'신청 준비 현황'})).toContainText('조회 중단 1개');
+ await page.reload();await openImport(page,2);await expect(page.locator('.preparation-list')).toContainText('파일에서 가져온 메모');
+});
+
+test('invalid imports and cancellation never mutate existing records',async({page})=>{
+ await page.goto('/');await openImport(page,0);
+ await page.getByLabel('JSON 기록 파일',{exact:true}).setInputFiles({name:'broken.json',mimeType:'application/json',buffer:Buffer.from('{broken')});
+ await expect(page.locator('.planning-import')).toContainText('올바른 JSON 기록');await expect(page.getByRole('button',{name:'선택한 내용 가져오기'})).toHaveCount(0);
+ await page.getByLabel('JSON 기록 파일',{exact:true}).setInputFiles(importFile(importData));await expect(page.getByRole('region',{name:'가져오기 미리보기'})).toBeVisible();
+ await page.getByRole('button',{name:'가져오기 취소',exact:true}).click();expect(await page.evaluate(()=>localStorage.getItem('benefit-planning:v2:guest'))).toBeNull();
+});
+
+test('a second tab changing records invalidates an import preview without losing either draft',async({page,context})=>{
+ await page.goto('/');await openImport(page,0);await page.getByLabel('JSON 기록 파일',{exact:true}).setInputFiles(importFile(importData));
+ const other=await context.newPage();await api(other);await other.goto('/?benefit=a');await other.getByLabel('내 메모',{exact:true}).fill('다른 탭에서 저장');await other.getByRole('button',{name:'신청 기록 저장',exact:true}).click();
+ await expect(page.locator('.planning-import')).toContainText('미리보기 이후 기록이 변경');await expect(page.getByRole('button',{name:'선택한 내용 가져오기'})).toBeDisabled();
+ await page.getByRole('button',{name:'최신 기록으로 미리보기 갱신'}).click();await expect(page.locator('.planning-import')).toContainText('다른 탭에서 저장');
+ await page.getByRole('radio',{name:/현재 기록 유지/}).check();page.once('dialog',d=>d.accept());await page.getByRole('button',{name:'선택한 내용 가져오기'}).click();
+ await expect(page.locator('.planning-import')).toContainText('선택한 기록을 반영했어요');expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('benefit-planning:v2:guest')!).applications.a.note)).toBe('다른 탭에서 저장');
+ await other.close();
+});
+
+test('member device import survives failure and revision conflict and rechecks explicit choices',async({page})=>{
+ await member(page);await page.addInitScript(data=>localStorage.setItem('benefit-planning:v2:guest',JSON.stringify(data)),importData);
+ let state={revision:0,data:{version:1,compareIds:[],checklists:{},applications:{a:{status:'submitted',note:'계정 메모'}}}};
+ let mode='fail';
+ await page.route('**/api/account/planning',r=>{
+  if(r.request().method()==='PUT'){
+   if(mode==='fail')return r.fulfill({status:503,json:{}});
+   if(mode==='conflict'){state={revision:1,data:{...state.data,applications:{a:{status:'submitted',note:'다른 기기 메모'}}}};return r.fulfill({status:409,json:{}});}
+   expect(r.request().postDataJSON().revision).toBe(1);state={revision:2,data:r.request().postDataJSON().data};
+  }
+  return r.fulfill({json:state});
+ });
+ await page.goto('/');await expect(page.getByRole('button',{name:'신청 준비 1',exact:true})).toBeVisible();await openImport(page,1);
+ await page.getByRole('button',{name:'비회원 기기 기록 미리보기'}).click();await page.getByRole('radio',{name:/가져온 기록 사용/}).check();
+ page.once('dialog',d=>d.accept());await page.getByRole('button',{name:'선택한 내용 가져오기'}).click();await expect(page.locator('.planning-import')).toContainText('가져오기를 완료하지 못했어요');expect(state.data.applications.a.note).toBe('계정 메모');
+ mode='conflict';page.once('dialog',d=>d.accept());await page.getByRole('button',{name:'선택한 내용 가져오기'}).click();await expect(page.locator('.planning-import')).toContainText('미리보기 이후 기록이 변경');
+ await page.getByRole('button',{name:'최신 기록으로 미리보기 갱신'}).click();await expect(page.locator('.planning-import')).toContainText('다른 기기 메모');await page.getByRole('radio',{name:/현재 기록 유지/}).check();
+ mode='ok';page.once('dialog',d=>d.accept());await page.getByRole('button',{name:'선택한 내용 가져오기'}).click();await expect(page.locator('.planning-import')).toContainText('선택한 기록을 반영했어요');expect(state.data.applications.a.note).toBe('다른 기기 메모');
+ expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('benefit-planning:v2:guest')!).applications.a.note)).toBe('파일에서 가져온 메모');
+});
+
+test('saved management search combines unavailable and deadline filters and resets empty results',async({page})=>{
+ await page.clock.setFixedTime(new Date('2099-12-28T00:00:00Z'));
+ await page.addInitScript(()=>localStorage.setItem('benefit-saved',JSON.stringify(['a','b','missing'])));
+ await page.route('**/api/benefits?**',r=>new URL(r.request().url()).searchParams.get('size')==='100'?r.fulfill({json:{items:[{...benefits[0],deadline:'2000-01-01'},benefits[1]]}}):r.fallback());
+ await page.goto('/?view=saved');await page.getByRole('button',{name:'관심목록 관리',exact:true}).click();const dialog=page.getByRole('dialog',{name:'관심목록 관리'});
+ await expect(dialog.locator('li')).toHaveCount(3);await page.getByLabel('관심목록 공고 조건',{exact:true}).selectOption('week');await expect(dialog.locator('li')).toHaveCount(1);await expect(dialog.locator('li')).toContainText('서울 공통 교육');
+ await page.getByLabel('관심목록 공고 조건',{exact:true}).selectOption('expired');await expect(dialog.locator('li')).toContainText('강남 주거 지원');
+ await page.getByLabel('관심목록 공고 조건',{exact:true}).selectOption('missing');await page.getByRole('searchbox',{name:'관심목록 검색'}).fill('MISSING');await expect(dialog.locator('li')).toHaveCount(1);
+ await page.getByRole('searchbox',{name:'관심목록 검색'}).fill('no-match');await expect(dialog.locator('li')).toHaveCount(0);await page.getByRole('button',{name:'관심목록 조건 초기화'}).click();await expect(dialog.locator('li')).toHaveCount(3);
+ await page.setViewportSize({width:390,height:844});expect(await dialog.evaluate(e=>e.scrollWidth<=e.clientWidth)).toBe(true);
+});
+
+test('member import previews are discarded on logout and do not leak into guest planning',async({page})=>{
+ await member(page);await page.goto('/');await page.getByRole('button',{name:/내 계정/}).click();await expect(page.getByRole('button',{name:'조건 저장',exact:true})).toBeEnabled();await page.getByLabel('내 계정 닫기').click();
+ await openImport(page,0);await page.getByLabel('JSON 기록 파일',{exact:true}).setInputFiles(importFile(importData));await expect(page.getByRole('region',{name:'가져오기 미리보기'})).toBeVisible();
+ await page.getByLabel('신청 준비 닫기').click();await page.getByRole('button',{name:/내 계정/}).click();await page.getByRole('button',{name:'로그아웃',exact:true}).click();await page.getByLabel('내 계정 닫기').click();
+ await openImport(page,0);await expect(page.getByRole('region',{name:'가져오기 미리보기'})).toHaveCount(0);await expect(page.locator('.preparation-dialog')).not.toContainText('파일에서 가져온 메모');
+ expect(await page.evaluate(()=>localStorage.getItem('benefit-planning:v2:guest'))).toBeNull();
+});
+
+test('import with unavailable browser storage retains records in memory and reports the limitation',async({page})=>{
+ await page.addInitScript(()=>{const write=Storage.prototype.setItem;Storage.prototype.setItem=function(key,value){if(key.startsWith('benefit-planning:'))throw new DOMException('quota','QuotaExceededError');return write.call(this,key,value);};});
+ await page.goto('/');await openImport(page,0);await page.getByLabel('JSON 기록 파일',{exact:true}).setInputFiles(importFile(importData));
+ page.once('dialog',d=>d.accept());await page.getByRole('button',{name:'선택한 내용 가져오기'}).click();await expect(page.locator('.planning-import')).toContainText('이번 방문에만 기억');await expect(page.locator('.preparation-list')).toContainText('파일에서 가져온 메모');
+ expect(await page.evaluate(()=>localStorage.getItem('benefit-planning:v2:guest'))).toBeNull();
+});
