@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { emptyPlanning, createPlanningStore } from '../src/planning.ts';
+import { emptyPlanning, createPlanningStore, parsePlanning, setChecklistStep, setApplication, toggleCompare } from '../src/planning.ts';
 import { createRemotePlanningStore } from '../src/remotePlanning.ts';
 import { exportPlanning } from '../src/planningExport.ts';
 import { parseImport, resolveImport, importConflicts, applyReviewedImport, planningFingerprint, MAX_IMPORT_BYTES } from '../src/planningImport.ts';
@@ -26,6 +26,20 @@ test('prototype keys and unexpected fields cannot enter stored planning',()=>{
 test('byte size and aggregate record limits are checked before import',()=>{
  assert.throws(()=>parseImport('가'.repeat(MAX_IMPORT_BYTES/3+1)),/1MB/);
  assert.throws(()=>parseImport(wrap({...emptyPlanning(),applications:Object.fromEntries(Array.from({length:201},(_,i)=>[String(i),{status:'preparing',note:''}]))})));
+});
+test('inherited object keys are rejected in every import field and cannot enter planning stores',()=>{
+ for(const id of [...Object.getOwnPropertyNames(Object.prototype),'prototype','   ']) {
+  const checks={...emptyPlanning(),checklists:{[id]:['documents']}};
+  const applications={...emptyPlanning(),applications:{[id]:{status:'preparing',note:'invalid id'}}};
+  const comparison={...emptyPlanning(),compareIds:[id]};
+  for(const data of [checks,applications,comparison]) {
+   assert.throws(()=>parseImport(wrap(data)),/올바른 JSON/);
+   assert.deepEqual(parsePlanning(JSON.stringify(data)),emptyPlanning());
+  }
+  assert.deepEqual(setChecklistStep(emptyPlanning(),id,'documents',true),emptyPlanning());
+  assert.deepEqual(toggleCompare(emptyPlanning(),id),emptyPlanning());
+  assert.throws(()=>setApplication(emptyPlanning(),id,{status:'preparing',note:''}));
+ }
 });
 test('conflicts require explicit choices and both keep and replace preserve unrelated progress',()=>{
  const a=base(),b=incoming();assert.deepEqual(importConflicts(a,b),['a']);assert.throws(()=>resolveImport(a,b,{}),/선택/);

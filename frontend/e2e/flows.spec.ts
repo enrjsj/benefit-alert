@@ -430,6 +430,24 @@ test('invalid imports and cancellation never mutate existing records',async({pag
  await page.getByRole('button',{name:'가져오기 취소',exact:true}).click();expect(await page.evaluate(()=>localStorage.getItem('benefit-planning:v2:guest'))).toBeNull();
 });
 
+test('reserved IDs reject the whole import before preview and preserve existing records',async({page})=>{
+ const existing={version:1,compareIds:[],checklists:{a:['eligibility']},applications:{a:{status:'submitted',note:'보존할 메모'}}};
+ await page.addInitScript(data=>localStorage.setItem('benefit-planning:v2:guest',JSON.stringify(data)),existing);
+ await page.goto('/');await openImport(page,1);
+ for(const incoming of [
+  {...existing,checklists:{...existing.checklists,toString:['documents']}},
+  {...existing,applications:{...existing.applications,hasOwnProperty:{status:'preparing',note:'invalid'}}},
+  {...existing,compareIds:['valueOf']},
+ ]) {
+  await page.getByLabel('JSON 기록 파일',{exact:true}).setInputFiles(importFile(incoming));
+  await expect(page.locator('.planning-import')).toContainText('올바른 JSON 기록');
+  await expect(page.getByRole('region',{name:'가져오기 미리보기'})).toHaveCount(0);
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('benefit-planning:v2:guest')!))).toEqual(existing);
+ }
+ await page.getByLabel('JSON 기록 파일',{exact:true}).setInputFiles(importFile(importData));
+ await expect(page.getByRole('region',{name:'가져오기 미리보기'})).toContainText('선택 필요 1개');
+});
+
 test('a second tab changing records invalidates an import preview without losing either draft',async({page,context})=>{
  await page.goto('/');await openImport(page,0);await page.getByLabel('JSON 기록 파일',{exact:true}).setInputFiles(importFile(importData));
  const other=await context.newPage();await api(other);await other.goto('/?benefit=a');await other.getByLabel('내 메모',{exact:true}).fill('다른 탭에서 저장');await other.getByRole('button',{name:'신청 기록 저장',exact:true}).click();

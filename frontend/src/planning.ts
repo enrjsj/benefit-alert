@@ -32,11 +32,12 @@ export type Planning = {
 };
 export const MAX_COMPARE = 3;
 export const MAX_CHECKLISTS = 200;
-const validId = (id: unknown): id is string =>
+export const validPlanningId = (id: unknown): id is string =>
   typeof id === "string" &&
-  id.length > 0 &&
+  id.trim().length > 0 &&
   id.length <= 100 &&
-  !["__proto__", "constructor", "prototype"].includes(id);
+  id !== "prototype" && !Object.hasOwn(Object.prototype, id);
+const validId = validPlanningId;
 const isStep = (id: unknown): id is StepId =>
   checklistSteps.some((step) => step.id === id);
 export function emptyPlanning(): Planning {

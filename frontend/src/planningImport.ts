@@ -1,8 +1,8 @@
-import { applicationStatuses, checklistSteps, MAX_CHECKLISTS, MAX_COMPARE, mergePlanning, parsePlanning, sameApplication, trackedIds, type Planning } from './planning.ts';
+import { applicationStatuses, checklistSteps, MAX_CHECKLISTS, MAX_COMPARE, mergePlanning, parsePlanning, sameApplication, trackedIds, validPlanningId, type Planning } from './planning.ts';
 export const MAX_IMPORT_BYTES = 1024 * 1024;
 export type ImportChoices = Record<string, 'existing' | 'incoming'>;
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
-const validId = (id: unknown): id is string => typeof id === 'string' && !!id.trim() && id.length <= 100 && !['__proto__', 'constructor', 'prototype'].includes(id);
+const validId = validPlanningId;
 const fail = (): never => { throw Error('혜택온에서 내보낸 올바른 JSON 기록 파일인지 확인해 주세요. 손상된 항목은 가져오지 않아요.'); };
 export function parseImport(text: string): Planning {
   if (new TextEncoder().encode(text).length > MAX_IMPORT_BYTES) throw Error('파일은 1MB 이하만 가져올 수 있어요.');
