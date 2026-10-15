@@ -696,7 +696,7 @@ function App() {
         )}
         <div className="content-layout">
           <section
-            id="results"
+            id="results" tabIndex={-1}
             className="results"
             aria-labelledby="results-title"
             aria-busy={loading}
@@ -1247,7 +1247,13 @@ function App() {
         </section>
       )}
       {savedManagerOwner === planningOwner && <SavedDialog key={planningOwner} account={account} onClose={() => setSavedManagerOwner(null)} />}
-      {dataReportOpen && <DataReportDialog onClose={() => setDataReportOpen(false)} />}
+      {dataReportOpen && <DataReportDialog onClose={() => setDataReportOpen(false)} onExplore={selection => {
+        resetFilters(); setSavedOnly(false);
+        if (selection.region) setRegion(selection.region);
+        if (selection.periodType) setPeriodType(selection.periodType);
+        setDataReportOpen(false);
+        requestAnimationFrame(() => { goToResults(); document.getElementById("results")?.focus({ preventScroll: true }); });
+      }} />}
       {accountOpen && (
         <AccountPanel key={planningOwner}
           account={account}

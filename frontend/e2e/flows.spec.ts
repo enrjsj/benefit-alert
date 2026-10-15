@@ -557,3 +557,52 @@ test('an old profile API cannot falsely confirm a district save',async({page})=>
  await expect(page.getByRole('alert')).toContainText('시군구 조건의 저장 결과를 확인하지 못했어요');
  await expect(page.getByLabel('관심 시·군·구')).toHaveValue('은평구');await expect(page.getByText('맞춤 조건을 저장했어요.',{exact:true})).toHaveCount(0);
 });
+
+const reportRegions=['서울','경기','인천','부산','대구','대전','광주','울산','세종','강원','충북','충남','전북','전남','경북','경남','제주'].map(region=>({region,total:region==='서울'?2:0,districtKnown:region==='서울'?1:0}));
+const expandedReport={...reportFixture,regions:reportRegions,periods:{dated:3,ongoing:1,guidance:0}};
+test('report drilldown clears old filters and saved view, focuses results and survives reload',async({page})=>{
+ await page.addInitScript(()=>localStorage.setItem('benefit-saved',JSON.stringify(['a'])));
+ await page.route('**/api/data-report',r=>r.fulfill({json:expandedReport}));
+ await page.route('**/api/benefits?**',route=>{
+  const p=new URL(route.request().url()).searchParams;
+  if(p.get('periodType')==='ongoing') return route.fulfill({json:{items:[{...benefits[1],deadline:null,periodLabel:'상시신청',periodType:'ongoing'}],total:1,totalPages:1,page:1,size:12,demo:false}});
+  return route.fallback();
+ });
+ await page.goto('/?view=saved&region=서울&district=강남구&category=주거&q=강남&openOnly=true&periodType=dated&page=2');
+ await page.getByRole('button',{name:'데이터 현황과 업데이트 보기',exact:true}).click();
+ await expect(page.getByRole('button',{name:'경기 공고 0건 보기',exact:true})).toBeDisabled();
+ await page.getByRole('button',{name:'서울 공고 2건 보기',exact:true}).click();
+ await expect(cards(page)).toHaveCount(2);await expect(page.locator('#results')).toBeFocused();
+ await expect(page).toHaveURL(/\?region=/);await expect(page).not.toHaveURL(/district=|category=|q=|openOnly=|periodType=|page=|view=/);
+ await page.reload();await expect(cards(page)).toHaveCount(2);
+ await page.getByRole('button',{name:'데이터 현황과 업데이트 보기',exact:true}).click();
+ await expect(page.getByRole('button',{name:'별도 안내 공고 0건 보기',exact:true})).toBeDisabled();
+ await page.getByRole('button',{name:'상시 신청 공고 1건 보기',exact:true}).click();
+ await expect(cards(page)).toHaveCount(1);await expect(cards(page)).toContainText('상시 신청');
+ await expect(page).toHaveURL(/\?periodType=ongoing$/);await expect(page.getByLabel('거주 지역',{exact:true})).toHaveValue('전체');
+ await page.reload();await expect(cards(page)).toHaveCount(1);
+});
+test('report rejects inconsistent new totals without replacing the last valid snapshot and fits mobile',async({page})=>{
+ let broken=false;
+ await page.route('**/api/data-report',r=>r.fulfill({json:broken?{...expandedReport,periods:{dated:3,ongoing:2,guidance:0}}:expandedReport}));
+ await page.setViewportSize({width:390,height:844});await page.goto('/');
+ await page.getByRole('button',{name:'데이터 현황과 업데이트 보기',exact:true}).click();
+ await expect(page.locator('.report-regions li')).toHaveCount(17);
+ await expect(page.locator('.report-periods button')).toHaveCount(3);
+ expect(await page.locator('.data-report-dialog').evaluate(e=>e.scrollWidth<=e.clientWidth)).toBe(true);
+ broken=true;await page.getByRole('button',{name:'현황 새로고침',exact:true}).click();
+ await expect(page.locator('.data-report-dialog [role=alert]')).toContainText('마지막으로 확인한 현황');
+ await expect(page.getByRole('button',{name:'상시 신청 공고 1건 보기',exact:true})).toBeVisible();
+ await page.keyboard.press('Escape');await expect(page.locator('.data-report-dialog')).toHaveCount(0);
+});
+test('collection warnings show repeated failures, active recovery and return to healthy state',async({page})=>{
+ let status={configured:true,lastSuccessAt:'2026-10-14T00:00:00Z',latest:{status:'FAILED',finishedAt:null,fetchedCount:0},consecutiveFailures:3,attentionReason:'REPEATED_FAILURE',freshness:'STALE',collecting:false,nextAttemptAt:'2026-10-15T01:00:00Z'};
+ await page.route('**/api/data-status',r=>r.fulfill({json:status}));
+ await page.goto('/');await expect(page.locator('.data-status')).toContainText('연속 3회');await expect(page.locator('.data-status')).toContainText('다음 시도 예정');
+ status={...status,collecting:true,latest:{status:'RUNNING',finishedAt:null,fetchedCount:100}};
+ await page.reload();await expect(page.locator('.data-status')).toContainText('100건 처리');await expect(page.locator('.data-status')).toContainText('연속 3회');
+ status={...status,collecting:false,attentionReason:'CREDENTIAL_REJECTED',latest:{status:'FAILED',finishedAt:null,fetchedCount:0}};
+ await page.reload();await expect(page.locator('.data-status')).toContainText('인증 문제');
+ status={...status,attentionReason:'NONE',consecutiveFailures:0,freshness:'CURRENT',latest:{status:'SUCCESS',finishedAt:null,fetchedCount:100}};
+ await page.reload();await expect(page.locator('.data-status')).toContainText('공식 공고 전체 업데이트');await expect(page.locator('.data-status')).not.toContainText('연속');
+});

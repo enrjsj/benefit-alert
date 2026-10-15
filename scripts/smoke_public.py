@@ -47,6 +47,14 @@ def run(base='https://benefit-alert.vercel.app'):
     assert coverage['total']==coverage['nationwide']+coverage['regionKnown']+coverage['regionUnknown']
     assert 0<=coverage['districtKnown']<=coverage['regionKnown']
     assert 0<=coverage['deadlineKnown']<=coverage['total']
+    assert len(report['regions'])==17 and len({r['region'] for r in report['regions']})==17
+    assert sum(r['total'] for r in report['regions'])==coverage['regionKnown']
+    assert sum(r['districtKnown'] for r in report['regions'])==coverage['districtKnown']
+    assert all(0<=r['districtKnown']<=r['total'] for r in report['regions'])
+    assert sum(report['periods'].values())==coverage['total']
+    assert report['periods']['dated']==coverage['deadlineKnown']
+    assert data('status')['consecutiveFailures']>=0
+    assert data('status')['attentionReason'] in ('DISABLED','STALLED','CREDENTIAL_REJECTED','REPEATED_FAILURE','STALE','WAITING','NONE')
     assert len(report['history'])<=10
     assert all(set(r)=={'status','startedAt','finishedAt','fetchedCount','rejectedCount'} for r in report['history'])
     _,detail=get(('detail','/api/benefits/'+data('all')['items'][0]['id']))

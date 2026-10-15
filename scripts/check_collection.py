@@ -20,8 +20,13 @@ def evaluate(data, now, started):
         return "error", "Government API collection is not configured."
     latest = data.get("latest") or {}
     status = latest.get("status")
+    if data.get("attentionReason") == "CREDENTIAL_REJECTED" or latest.get("errorCode") == "credential_rejected":
+        return "error", "Government API credentials were rejected; operator configuration needs checking."
     if status == "RUNNING" or data.get("stalled") or (status == "FAILED" and latest.get("errorCode") == "interrupted"):
         return "wait", "Waiting for collection or expired lease recovery."
+    failures = data.get("consecutiveFailures", 0)
+    if type(failures) is int and failures >= 3:
+        return "error", f"{failures} consecutive collection attempts did not complete successfully."
     finished = timestamp(latest.get("finishedAt"))
     if status in ("FAILED", "PARTIAL") and finished and finished >= started:
         return "error", "The collection attempt did not complete successfully."
@@ -45,12 +50,28 @@ def fetch_status():
         return data
 
 
+def safe_time(value):
+    try:
+        parsed = timestamp(value)
+        return parsed.astimezone(timezone.utc).isoformat() if parsed and parsed.tzinfo else "none"
+    except (ValueError, TypeError, AttributeError):
+        return "none"
+
+
 def summary(ok, reason, data):
     latest = data.get("latest") or {}
+    attention = data.get("attentionReason")
+    if attention not in ("DISABLED", "STALLED", "CREDENTIAL_REJECTED", "REPEATED_FAILURE", "STALE", "WAITING", "NONE"):
+        attention = "UNKNOWN"
+    failures = data.get("consecutiveFailures", 0)
+    failures = failures if type(failures) is int and failures >= 0 else "unknown"
     text = "\n".join([
         "## Collection check", "",
         f"Result: {'SUCCESS' if ok else 'FAILED'}", reason,
-        f"Last full success (UTC): {data.get('lastSuccessAt') or 'none'}",
+        f"Attention: {attention}",
+        f"Consecutive incomplete attempts: {failures}",
+        f"Last full success (UTC): {safe_time(data.get('lastSuccessAt'))}",
+        f"Next attempt (UTC): {safe_time(data.get('nextAttemptAt'))}",
         f"Processed records in latest attempt: {latest.get('fetchedCount', 0)}", "",
     ])
     print(text, flush=True)
@@ -63,22 +84,25 @@ def monitor(timeout=3600, interval=20):
     started = datetime.now(timezone.utc)
     deadline = time.monotonic() + timeout
     last = {}
-    reason = "Timed out waiting for a successful collection."
+    reason = "No status response was available."
+    unavailable = 0
     while time.monotonic() < deadline:
         try:
             last = fetch_status()
             outcome, message = evaluate(last, datetime.now(timezone.utc), started)
+            reason = message
             print(f"{outcome}: {message} Processed: {(last.get('latest') or {}).get('fetchedCount', 0)}", flush=True)
             if outcome != "wait":
                 summary(outcome == "healthy", message, last)
                 return 0 if outcome == "healthy" else 1
         except (OSError, ValueError, TypeError, AttributeError) as error:
+            unavailable += 1
             # Only log the type: connection errors can include request details.
             print(f"Status temporarily unavailable ({type(error).__name__}); retrying.", flush=True)
         remaining = deadline - time.monotonic()
         if remaining > 0:
             time.sleep(min(interval, remaining))
-    summary(False, reason, last)
+    summary(False, f"Timed out. {reason} Unavailable status responses: {unavailable}.", last)
     return 1
 
 

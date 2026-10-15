@@ -184,3 +184,10 @@ Flyway V5는 기존 정부24 공고에서 누락된 마감일만 채웁니다. �
 **내 계정 → 나의 관심 조건 → 관심 시·군·구**에서 세부 지역을 저장하고 같은 조건으로 검색할 수 있습니다. 시군구별 신규 알림은 해당 지역만 표시하며, 직접 저장한 공고의 마감 알림은 별도로 유지됩니다. 시도를 전체로 선택해야 전국 공고를 포함합니다. 기존 회원은 시군구 전체로 유지됩니다.
 
 일부 지방기관은 제공기관명의 명시적인 대응표로 지역을 보완합니다. Flyway V6/V7가 기존 지역 미확인 공고와 계정 시군구 필드를 반영하며, 원본 내용과 개인 신청 기록은 보존합니다. `ProviderScopeV1`은 과거 마이그레이션 재현용으로 고정하며 추가 보정은 새 버전/마이그레이션으로 작성합니다. 백엔드 `district-options.json`과 프런트 내장 목록은 함께 갱신하며 일치 여부를 테스트합니다.
+
+
+### 지역·기간 현황과 수집 진단
+
+`/api/data-report`의 `regions`는 17개 시도별 `total`/`districtKnown`, `periods`는 `dated`/`ongoing`/`guidance` 건수입니다. 활성 공고를 한 번에 집계하며 `regions.total` 합은 `coverage.regionKnown`, 기간 합은 `coverage.total`과 같습니다. 현황의 건수를 선택하면 기존 검색 조건과 관심목록 보기를 초기화하고 해당 전체 목록으로 이동합니다. 집계와 검색 사이에 수집이 진행되면 건수는 달라질 수 있습니다.
+
+`/api/data-status`의 `consecutiveFailures`는 최근 성공 이후 FAILED/PARTIAL 횟수입니다. `attentionReason`은 DISABLED/STALLED/CREDENTIAL_REJECTED/REPEATED_FAILURE/WAITING/STALE/NONE 중 하나이며, 연속 3회부터 반복 실패로 표시합니다. 진행 중 재시도는 실패 횟수를 초기화하지 않고 성공 시 0으로 복원합니다. `scripts/check_collection.py`는 기존 GitHub 정기 점검에서 진단 결과와 시간 초과 이유를 실행 요약에 남기며 외부 메시지를 발송하지 않습니다.

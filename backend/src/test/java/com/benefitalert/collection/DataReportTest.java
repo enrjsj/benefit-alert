@@ -20,6 +20,10 @@ class DataReportTest {
   db.jdbc.sql("UPDATE benefit SET active=false WHERE id='inactive'").update();
   db.jdbc.sql("UPDATE benefit SET deadline=null WHERE id='unknown'").update();
   var report=new DataReportController(db.jdbc).report().getBody();
+  assertEquals(17,report.regions().size());
+  assertEquals(new DataReportController.RegionCount("서울",2,1),report.regions().getFirst());
+  assertEquals(0,report.regions().stream().filter(r->r.region().equals("경기")).findFirst().orElseThrow().total());
+  assertEquals(new DataReportController.PeriodCount(3,0,1),report.periods());
   assertNotNull(report);assertFalse(report.demo());assertEquals(new DataReportController.Coverage(4,1,2,1,1,3),report.coverage());assertTrue(report.history().isEmpty());
   var local=new PostgresBenefitRepository(db.jdbc).findById("local").orElseThrow();
   assertEquals("gov24",local.sourceKind());assertNotNull(local.updatedAt());assertFalse(local.updatedAt().isAfter(Instant.now()));
@@ -39,4 +43,20 @@ class DataReportTest {
   var mapper=new ObjectMapper().findAndRegisterModules();String json=mapper.writeValueAsString(controller.report().getBody());
   assertFalse(json.contains("credential-or-internal-detail"));assertFalse(json.contains("INTERNAL_ONLY"));assertFalse(json.contains("errorCode"));
  }}
+ @Test void periodBreakdownMatchesSearchAndEmptyDataHasZeroTotals() {try(var db=new TestDatabase()){
+  var controller=new DataReportController(db.jdbc);
+  var empty=controller.report().getBody();
+  assertEquals(new DataReportController.PeriodCount(0,0,0),empty.periods());
+  assertEquals(0,empty.regions().stream().mapToLong(DataReportController.RegionCount::total).sum());
+  for(String id:java.util.List.of("dated","ongoing","conditional","unknown")) db.seed(id,"전국","생활",-1);
+  db.jdbc.sql("UPDATE benefit SET deadline=null,period_label=CASE id WHEN 'ongoing' THEN '연중 접수' WHEN 'conditional' THEN '상시(예산 소진 시)' ELSE '' END WHERE id<>'dated'").update();
+  var report=controller.report().getBody();
+  assertEquals(new DataReportController.PeriodCount(1,1,2),report.periods());
+  for(String period:java.util.List.of("dated","ongoing","guidance")) {
+   long expected=switch(period){case "dated"->report.periods().dated();case "ongoing"->report.periods().ongoing();default->report.periods().guidance();};
+   var search=new com.benefitalert.BenefitSearch("","전체","전체",false,1,100,"default",null,null,"",period);
+   assertEquals(expected,new PostgresBenefitRepository(db.jdbc).search(search).total());
+  }
+ }}
+
 }

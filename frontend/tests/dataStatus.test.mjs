@@ -14,3 +14,11 @@ test('failures show retry and preserve existing listings',()=>{
  assert.match(dataStatusMessage({configured:false,latest:null}),/연동을 준비/);
  assert.match(dataStatusMessage({configured:true,latest:null}),/첫 공식/);
 });
+
+test('repeated failures retain retry progress and credential guidance without raw error text',()=>{
+ const failed={...base,latest:{status:'FAILED',finishedAt:null},consecutiveFailures:3,attentionReason:'REPEATED_FAILURE',freshness:'STALE',nextAttemptAt:'2026-10-06T01:00:00Z'};
+ assert.match(dataStatusMessage(failed),/연속 3회.*12시간.*다음 시도 예정/);
+ assert.match(dataStatusMessage({...failed,collecting:true,latest:{status:'RUNNING',finishedAt:null,fetchedCount:12}}),/연속 3회.*갱신.*12건 처리/);
+ assert.match(dataStatusMessage({...failed,attentionReason:'CREDENTIAL_REJECTED'}),/인증 문제.*기존 공고/);
+ assert.doesNotMatch(dataStatusMessage({...base,latest:{status:'SUCCESS',finishedAt:base.lastSuccessAt},consecutiveFailures:0,attentionReason:'NONE'}),/연속|실패|인증/);
+});

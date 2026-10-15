@@ -20,6 +20,10 @@ public class DemoDataReportController {
   long districts=items.stream().filter(b->RegionScope.REGIONS.contains(b.region()) && !b.district().isEmpty()).count();
   long deadlines=items.stream().filter(b->b.deadline()!=null).count();
   var coverage=new DataReportController.Coverage(items.size(),nationwide,regions,districts,items.size()-nationwide-regions,deadlines);
-  return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(new DataReportController.Report(true,Instant.now(),coverage,List.of()));
+  return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(new DataReportController.Report(true,Instant.now(),coverage,List.of(),
+   DataReportController.REGION_ORDER.stream().map(region->new DataReportController.RegionCount(region,
+    items.stream().filter(b->b.region().equals(region)).count(),
+    items.stream().filter(b->b.region().equals(region) && !b.district().isEmpty()).count())).toList(),
+   new DataReportController.PeriodCount(deadlines,items.stream().filter(b->b.periodType().equals("ongoing")).count(),items.stream().filter(b->b.periodType().equals("guidance")).count())));
  }
 }

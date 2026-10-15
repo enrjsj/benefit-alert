@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { fetchJsonResponse } from './request';
 import { dataTime, historyLabels, parseDataReport, type DataReport } from './dataReport';
+import { periodLabels, type PeriodType } from './applicationPeriod';
+export type ReportSearch = { region?: string; periodType?: PeriodType };
 const base = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
-export function DataReportDialog({ onClose }: { onClose: () => void }) {
+export function DataReportDialog({ onClose, onExplore }: { onClose: () => void; onExplore: (search: ReportSearch) => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [report, setReport] = useState<DataReport | null>(null);
   const [busy, setBusy] = useState(true), [error, setError] = useState(false), [retry, setRetry] = useState(0);
@@ -41,6 +43,26 @@ export function DataReportDialog({ onClose }: { onClose: () => void }) {
         <p className="planning-help">시·군·구 확인 건수는 시·도 확인 건수에 포함돼요. 지역은 제공기관 기준이며 실제 지원 대상과 다를 수 있어요.</p>
         <p className="planning-help">마감일을 날짜로 확인하지 못한 { (c.total-c.deadlineKnown).toLocaleString('ko-KR') }건에는 상시 신청·기간 별도 안내 등이 포함돼요. 날짜 누락만으로 신청 불가를 뜻하지는 않아요.</p>
       </section>
+      {(report.regions || report.periods) && <p className="planning-help">아래 건수를 선택하면 기존 검색·관심목록 조건을 초기화하고 해당 공고 전체를 조회해요. 집계 이후 업데이트에 따라 검색 건수는 달라질 수 있어요.</p>}
+      {report.regions && <section aria-labelledby="region-coverage-title">
+        <h3 id="region-coverage-title">시·도별 공고</h3>
+        <p className="planning-help">전국 공고와 지역 확인 필요 공고는 제외했어요. 시·도 공통 공고와 해당 시·군·구 공고를 합한 건수예요.</p>
+        <ul className="report-regions">
+          {report.regions.map(row=><li key={row.region}>
+            <button type="button" disabled={row.total===0} onClick={()=>onExplore({region:row.region})} aria-label={`${row.region} 공고 ${row.total.toLocaleString('ko-KR')}건 보기`}>
+              <strong>{row.region}</strong><span>{row.total.toLocaleString('ko-KR')}건</span>
+              <small>시·군·구 확인 {row.districtKnown.toLocaleString('ko-KR')}건</small>
+            </button>
+          </li>)}
+        </ul>
+      </section>}
+      {report.periods && <section aria-labelledby="period-coverage-title">
+        <h3 id="period-coverage-title">신청 기간별 공고</h3>
+        <div className="report-periods">{(Object.keys(periodLabels) as PeriodType[]).map(kind=><button type="button" key={kind} disabled={report.periods![kind]===0} onClick={()=>onExplore({periodType:kind})} aria-label={`${periodLabels[kind]} 공고 ${report.periods![kind].toLocaleString('ko-KR')}건 보기`}>
+          <strong>{periodLabels[kind]}</strong><span>{report.periods![kind].toLocaleString('ko-KR')}건</span>
+        </button>)}</div>
+        <p className="planning-help">날짜 마감에는 이미 마감된 공고도 포함돼요. 별도 안내에는 조건부 접수·기관별 안내·신청 불필요 등이 포함되며, 실제 접수 가능 여부는 상세 원문에서 확인해 주세요.</p>
+      </section>}
       <section aria-labelledby="history-title">
         <h3 id="history-title">최근 공고 업데이트</h3>
         <p className="planning-help">최근 10회까지 표시해요. 처리 건수에는 기존 공고 갱신도 포함되며, 새로 추가된 공고 수는 아니에요.</p>

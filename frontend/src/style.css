@@ -2518,3 +2518,11 @@ button:disabled {
 .preference-district { min-width: 0; }
 .preference-district select { width: 100%; }
 .preference-district p { font-size: .8rem; }
+
+.report-regions { list-style:none; padding:0; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+.report-regions button,.report-periods button { width:100%; display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px; text-align:left; border:1px solid var(--border,#d9e2da); border-radius:10px; padding:12px; background:#f5f8f2; color:inherit; }
+.report-regions button:not(:disabled):hover,.report-periods button:not(:disabled):hover { border-color:#22654f; background:#eaf2e5; }
+.report-regions small { flex-basis:100%; font-size:11px; color:#65746b; }
+.report-regions button:disabled,.report-periods button:disabled { opacity:.55; cursor:default; }
+.report-periods { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+@media(max-width:600px) { .report-regions { grid-template-columns:repeat(2,minmax(0,1fr)); } .report-periods { grid-template-columns:1fr; } }
