@@ -12,10 +12,13 @@ public final class RegionScope {
  private static final Set<String> JEONNAM_DISTRICTS=Set.of("강진군","고흥군","곡성군","광양시","구례군","나주시","담양군","목포시","무안군","보성군","순천시","신안군","여수시","영광군","영암군","완도군","장성군","장흥군","진도군","함평군","해남군","화순군");
  private static final String DISTRICT="[가-힣]+[시군구](?: [가-힣]+구)?";
  private static final Pattern PROVIDER=Pattern.compile("^(?:"+PROVINCES+") ("+DISTRICT+")(?: |$)");
- public static final String SQL_DISTRICT="substring(regexp_replace(btrim(b.organization),'[[:space:]]+',' ','g') from '^(?:"+PROVINCES+") ("+DISTRICT+")(?: |$)')";
+ private static final String GOVERNMENT_DISTRICT="substring(regexp_replace(btrim(b.organization),'[[:space:]]+',' ','g') from '^(?:"+PROVINCES+") ("+DISTRICT+")(?: |$)')";
+ public static final String SQL_DISTRICT="coalesce("+GOVERNMENT_DISTRICT+","+com.benefitalert.collection.ProviderScopeV1.districtSql("regexp_replace(btrim(b.organization),'[[:space:]]+',' ','g')")+")";
  public static String district(String organization) {
   var match=PROVIDER.matcher(organization.strip().replaceAll("\\s+"," "));
-  return match.find()?match.group(1):"";
+  if(match.find()) return match.group(1);
+  var local=com.benefitalert.collection.ProviderScopeV1.find(organization);
+  return local==null?"":local.district();
  }
  /** Keep existing geographic filters for identifiable local providers in the source's merged name. */
  public static String mergedProviderRegion(String organization) {

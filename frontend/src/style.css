@@ -2457,11 +2457,11 @@ button:disabled {
 .preparation-list progress { width: 100%; margin: 8px 0 16px; accent-color: #247a54; }
 .search-panel.unified-search {
   display: grid;
-  grid-template-columns: minmax(110px, 0.7fr) minmax(140px, 0.9fr) minmax(110px, 0.7fr) minmax(170px, 1.5fr) auto;
+  grid-template-columns: minmax(90px, .7fr) minmax(120px, .9fr) minmax(95px, .7fr) minmax(115px, .8fr) minmax(150px, 1.3fr) auto;
   gap: 20px;
 }
-.unified-search .region-field, .unified-search .district-field, .unified-search .category-field { width: auto; min-width: 0; }
-.unified-search .district-field select, .unified-search .category-field select {
+.unified-search .region-field, .unified-search .district-field, .unified-search .category-field, .unified-search .period-field { width: auto; min-width: 0; }
+.unified-search .district-field select, .unified-search .category-field select, .unified-search .period-field select {
   width: 100%; border: 0; background: #fff; color: #344639;
   font-size: 14px; font-weight: 600; padding: 0 12px 0 0; height: 27px;
 }
@@ -2469,7 +2469,7 @@ button:disabled {
 @media (max-width: 760px) {
   .search-panel.unified-search { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
   .unified-search .region-field { display: block; }
-  .unified-search .region-field select, .unified-search .district-field select, .unified-search .category-field select { width: 100%; max-width: 100%; font-size: 14px; }
+  .unified-search .region-field select, .unified-search .district-field select, .unified-search .category-field select, .unified-search .period-field select { width: 100%; max-width: 100%; font-size: 14px; }
   .unified-search .region-field .field-label, .unified-search .keyword-field .field-label { display: flex; margin-bottom: 8px; }
   .unified-search .keyword-field { grid-column: 1 / -1; }
   .unified-search .search-submit { grid-column: 1 / -1; width: 100%; }
@@ -2481,7 +2481,7 @@ button:disabled {
   .unified-search .keyword-field { grid-column: 1 / 3; }
   .unified-search .search-submit { width: 100%; }
 }
-@media (max-width: 760px) { .unified-search .category-field { grid-column: 1 / -1; } }
+@media (max-width: 760px) { .unified-search .category-field { grid-column: auto; } }
 
 .district-help p { margin: 0; }
 .district-help .text-button { margin-top: 4px; }
@@ -2512,3 +2512,9 @@ button:disabled {
 .import-conflict strong, .import-conflict .application-note { display: block; margin: 6px 0; }
 .import-conflict .application-note { max-height: 160px; overflow: auto; }
 .preparation-summary { background: #f3f7f3; border-radius: 12px; padding: 12px 16px; margin: 16px 0; }
+
+.period-field select { width: 100%; }
+.period-help { color: var(--muted); font-size: .85rem; line-height: 1.6; margin: 12px 0; }
+.preference-district { min-width: 0; }
+.preference-district select { width: 100%; }
+.preference-district p { font-size: .8rem; }

@@ -1,3 +1,4 @@
+import type { PeriodFilter } from './applicationPeriod';
 export const searchRegions = ['전체','서울','경기','인천','부산','대구','대전','광주','울산','세종','강원','충북','충남','전북','전남','경북','경남','제주'];
 export const searchCategories = ['전체','주거','취업','생활','가족','교육','건강','문화','기타'];
 export function readSearchState(search: string) {
@@ -11,6 +12,7 @@ export function readSearchState(search: string) {
     category: searchCategories.includes(p.get('category') || '') ? p.get('category')! : '전체',
     sort: ['default','deadline','title'].includes(p.get('sort') || '') ? p.get('sort')! : 'default',
     page: Number.isFinite(rawPage) ? Math.max(1, Math.min(10000, Math.floor(rawPage))) : 1,
+    periodType: (['dated','ongoing','guidance'].includes(p.get('periodType') || '') ? p.get('periodType')! : 'all') as PeriodFilter,
     openOnly: p.get('openOnly') === 'true', savedOnly: p.get('view') === 'saved',
     detailId: (p.get('benefit') || '').slice(0, 100),
   };

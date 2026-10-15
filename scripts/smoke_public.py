@@ -17,6 +17,10 @@ def run(base='https://benefit-alert.vercel.app'):
         'gangnam': '/api/benefits?' + urlencode(dict(region='서울', district='강남구', size=100)),
         'seongnam': '/api/benefits?' + urlencode(dict(region='경기', district='성남시', page=2, size=12)),
         'yeongam': '/api/benefits?' + urlencode(dict(region='전남', district='영암군', size=100)),
+        'dated': '/api/benefits?periodType=dated&size=100',
+        'ongoing': '/api/benefits?periodType=ongoing&size=100',
+        'guidance': '/api/benefits?periodType=guidance&size=100',
+        'yongsan': '/api/benefits?' + urlencode(dict(region='서울', district='용산구', q='용산구시설관리공단', size=100)),
         'open': '/api/benefits?openOnly=true&sort=deadline&size=100',
         'districts': '/api/regions/districts?' + urlencode(dict(region='경기')),
         'status': '/api/data-status',
@@ -49,6 +53,10 @@ def run(base='https://benefit-alert.vercel.app'):
     assert detail[0]==200 and detail[2]['sourceKind'] in ('gov24','manual') and detail[2]['updatedAt']
 
     assert data('health')['status']=='UP'
+    assert sum(data(kind)['total'] for kind in ('dated','ongoing','guidance'))==data('all')['total']
+    for kind in ('dated','ongoing','guidance'):
+        assert data(kind)['items'] and all(b['periodType']==kind for b in data(kind)['items'])
+    assert data('yongsan')['items'] and all(b['region']=='서울' and b['district']=='용산구' for b in data('yongsan')['items'])
     assert data('all')['total']>0
     assert set(b['id'] for b in data('all')['items']).isdisjoint(b['id'] for b in data('second_page')['items'])
     for name,region,district in [('gangnam','서울','강남구'),('seongnam','경기','성남시'),('yeongam','전남','영암군')]:

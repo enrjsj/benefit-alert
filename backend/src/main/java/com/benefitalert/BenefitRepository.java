@@ -18,6 +18,7 @@ public interface BenefitRepository {
    .filter(b -> s.region().equals("전체") || b.region().equals(s.region()))
    .filter(b -> RegionScope.matches(b,s.district()))
    .filter(b -> s.category().equals("전체") || b.category().equals(s.category()))
+   .filter(b -> s.periodType().equals("all") || b.periodType().equals(s.periodType()))
    .filter(b -> !s.openOnly() || b.deadline() == null || !b.deadline().isBefore(s.today()))
    .filter(b -> s.ids() == null || s.ids().contains(b.id()));
   if (s.sort().equals("deadline")) filtered = filtered.sorted(Comparator.comparing(Benefit::deadline, Comparator.nullsLast(Comparator.naturalOrder())).thenComparing(Benefit::id));

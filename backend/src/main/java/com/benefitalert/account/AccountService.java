@@ -13,7 +13,9 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service @Profile("prod")
 public class AccountService {
- public record Preferences(String region, String category, boolean notificationsEnabled) {}
+ public record Preferences(String region, String category, boolean notificationsEnabled, String district) {
+  public Preferences(String region,String category,boolean notificationsEnabled){this(region,category,notificationsEnabled,null);}
+ }
  public record Alert(long id,String benefitId,String title,String kind,String createdAt,boolean read) {}
  public static final List<String> REGIONS=List.of("전체","서울","경기","인천","부산","대구","대전","광주","울산","세종","강원","충북","충남","전북","전남","경북","경남","제주");
  public static final List<String> CATEGORIES=List.of("전체","주거","취업","생활","가족","교육","건강","문화","기타");
@@ -22,14 +24,22 @@ public class AccountService {
  private void ensure(UUID user) { jdbc.sql("INSERT INTO member_profile(user_id) VALUES(:u) ON CONFLICT DO NOTHING").param("u",user).update(); }
  public Preferences preferences(UUID user) {
   ensure(user);
-  return jdbc.sql("SELECT * FROM member_profile WHERE user_id=:u").param("u",user).query((r,n)->new Preferences(r.getString("region"),r.getString("category"),r.getBoolean("notifications_enabled"))).single();
+  return jdbc.sql("SELECT * FROM member_profile WHERE user_id=:u").param("u",user).query((r,n)->new Preferences(r.getString("region"),r.getString("category"),r.getBoolean("notifications_enabled"),r.getString("district"))).single();
  }
+ @Transactional
  public Preferences update(UUID user,Preferences p) {
   if(p==null || p.region()==null || p.category()==null || !REGIONS.contains(p.region()) || !CATEGORIES.contains(p.category())) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
   ensure(user);
-  jdbc.sql("UPDATE member_profile SET region=:r,category=:c,notifications_enabled=:n,updated_at=now() WHERE user_id=:u")
-   .param("u",user).param("r",p.region()).param("c",p.category()).param("n",p.notificationsEnabled()).update();
-  return p;
+  var previous=jdbc.sql("SELECT region,district FROM member_profile WHERE user_id=:u FOR UPDATE").param("u",user).query((r,n)->new String[]{r.getString(1),r.getString(2)}).single();
+  // Omitted district from older clients preserves the stored scope for the same province.
+  String district=p.district()==null?(previous[0].equals(p.region())?previous[1]:""):p.district().strip();
+  if(district.equals("전체")) district="";
+  if(!district.isEmpty() && (p.region().equals("전체") || district.length()>50 || !district.matches("[가-힣]+[시군구](?: [가-힣]+구)?")
+    || (!DistrictCatalog.contains(p.region(),district) && !new PostgresBenefitRepository(jdbc).districts(p.region()).contains(district))))
+   throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"시도와 시군구 조건을 확인해 주세요.");
+  jdbc.sql("UPDATE member_profile SET region=:r,category=:c,district=:d,notifications_enabled=:n,updated_at=now() WHERE user_id=:u")
+   .param("u",user).param("r",p.region()).param("c",p.category()).param("n",p.notificationsEnabled()).param("d",district).update();
+  return new Preferences(p.region(),p.category(),p.notificationsEnabled(),district);
  }
  public List<String> saved(UUID user) {
   return jdbc.sql("SELECT benefit_id FROM member_saved WHERE user_id=:u ORDER BY created_at DESC,benefit_id").param("u",user).query(String.class).list();
@@ -53,6 +63,7 @@ public class AccountService {
  public List<Alert> notifications(UUID user) {
   Preferences p=preferences(user);
   LocalDate today=LocalDate.now(ZoneId.of("Asia/Seoul"));
+  String matching="(:region='전체' OR b.region=:region) AND (:district='' OR "+RegionScope.SQL_DISTRICT+"=:district OR "+RegionScope.SQL_DISTRICT+" LIKE :district || ' %') AND (:category='전체' OR b.category=:category)";
   if(p.notificationsEnabled()) {
    jdbc.sql("""
     INSERT INTO member_notification(user_id,benefit_id,kind)
@@ -65,17 +76,18 @@ public class AccountService {
     SELECT :u,b.id,'new' FROM benefit b
     WHERE b.active AND b.created_at>=now()-interval '7 days'
     AND (b.deadline IS NULL OR b.deadline>=:today)
-    AND (:region='전체' OR b.region IN ('전국',:region)) AND (:category='전체' OR b.category=:category)
+    AND %s
     ORDER BY b.created_at DESC,b.id LIMIT 30
     ON CONFLICT(user_id,benefit_id,kind) DO NOTHING
-    """).param("u",user).param("today",today).param("region",p.region()).param("category",p.category()).update();
+    """.formatted(matching)).param("u",user).param("today",today).param("region",p.region()).param("district",p.district()).param("category",p.category()).update();
   }
   // Expired or no-longer-active notices are not shown as actionable alerts.
   return jdbc.sql("""
    SELECT n.*,b.title FROM member_notification n JOIN benefit b ON b.id=n.benefit_id
    WHERE n.user_id=:u AND b.active AND (b.deadline IS NULL OR b.deadline>=:today)
+   AND (n.kind='closing' OR (%s))
    ORDER BY n.created_at DESC,n.id DESC LIMIT 100
-   """).param("u",user).param("today",today).query((r,n)->new Alert(r.getLong("id"),r.getString("benefit_id"),r.getString("title"),r.getString("kind"),r.getString("created_at"),r.getObject("read_at")!=null)).list();
+   """.formatted(matching)).param("u",user).param("today",today).param("region",p.region()).param("district",p.district()).param("category",p.category()).query((r,n)->new Alert(r.getLong("id"),r.getString("benefit_id"),r.getString("title"),r.getString("kind"),r.getString("created_at"),r.getObject("read_at")!=null)).list();
  }
  public void read(UUID user,long id) { jdbc.sql("UPDATE member_notification SET read_at=now() WHERE user_id=:u AND id=:id").param("u",user).param("id",id).update(); }
 }

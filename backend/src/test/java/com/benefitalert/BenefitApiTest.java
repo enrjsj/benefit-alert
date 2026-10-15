@@ -21,6 +21,10 @@ class BenefitApiTest {
   mvc.perform(get("/api/data-report")).andExpect(status().isOk()).andExpect(header().string("Cache-Control","no-store"))
    .andExpect(jsonPath("$.demo").value(true)).andExpect(jsonPath("$.coverage.total").value(4)).andExpect(jsonPath("$.history.length()").value(0));
  }
+ @Test void periodFilterIsValidatedAndExposed() throws Exception {
+  mvc.perform(get("/api/benefits").param("periodType","wrong")).andExpect(status().isBadRequest());
+  mvc.perform(get("/api/benefits").param("periodType","guidance")).andExpect(status().isOk()).andExpect(jsonPath("$.items[0].periodType").value("guidance"));
+ }
  @Test void missingDetail() throws Exception {mvc.perform(get("/api/benefits/no-such-id")).andExpect(status().isNotFound());}
  @Test void personalListErrorsAreNeverCacheable() throws Exception {
   mvc.perform(get("/api/benefits").param("savedOnly","true"))

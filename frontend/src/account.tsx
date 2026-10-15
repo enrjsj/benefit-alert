@@ -1,3 +1,4 @@
+import { PreferenceDistrict } from "./PreferenceDistrict";
 import { createGuestSavedStore, savedKey } from "./guestSaved";
 import { fetchJsonResponse } from "./request";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
@@ -36,10 +37,11 @@ export const accountCategories = [
 ];
 export type Preferences = {
   region: string;
+  district?: string;
   category: string;
   notificationsEnabled: boolean;
 };
-const samePreferences = (left: Preferences, right: Preferences) => left.region === right.region && left.category === right.category && left.notificationsEnabled === right.notificationsEnabled;
+const samePreferences = (left: Preferences, right: Preferences) => left.region === right.region && (left.district || "") === (right.district || "") && left.category === right.category && left.notificationsEnabled === right.notificationsEnabled;
 type Alert = {
   id: number;
   benefitId: string;
@@ -243,6 +245,8 @@ export function useAccount() {
     try {
       const profile = await request<Preferences>("/profile", "PUT", p);
       if (sessionEpoch.current !== epoch) return false;
+      if ((p.district || "") !== (profile.district || ""))
+        throw Error("시군구 조건의 저장 결과를 확인하지 못했어요. 잠시 후 다시 저장해 주세요.");
       setProfile(profile);
       void refreshAlerts();
       return true;
@@ -531,9 +535,10 @@ export function AccountPanel({
                   <label>
                     관심 지역
                     <select
+                      aria-label="관심 지역"
                       value={prefs.region}
                       onChange={(e) =>
-                        setPrefs({ ...prefs, region: e.target.value })
+                        setPrefs({ ...prefs, region: e.target.value, district: "" })
                       }
                     >
                       {accountRegions.map((r) => (
@@ -541,9 +546,11 @@ export function AccountPanel({
                       ))}
                     </select>
                   </label>
+                  <PreferenceDistrict region={prefs.region} value={prefs.district || ""} onChange={district => setPrefs({...prefs,district})} />
                   <label>
                     관심 분야
                     <select
+                      aria-label="관심 분야"
                       value={prefs.category}
                       onChange={(e) =>
                         setPrefs({ ...prefs, category: e.target.value })
@@ -569,7 +576,7 @@ export function AccountPanel({
                   사이트 내 알림 받기
                 </label>
                 <p className="account-help">
-                  방문 시 관심 조건에 맞는 최근 7일 새 공고와 저장한 공고의 7일
+                  시군구를 고르면 해당 지역의 신규 공고만 표시해요. 시·도를 ‘전체’로 선택하면 전국 공고도 포함해요. 방문 시 관심 조건에 맞는 최근 7일 새 공고와 저장한 공고의 7일
                   이내 마감을 확인해요. 이메일·푸시 알림은 발송하지 않아요.
                 </p>
                 <div className="dialog-actions">

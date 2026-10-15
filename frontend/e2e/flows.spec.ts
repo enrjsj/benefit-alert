@@ -505,3 +505,55 @@ test('import with unavailable browser storage retains records in memory and repo
  page.once('dialog',d=>d.accept());await page.getByRole('button',{name:'선택한 내용 가져오기'}).click();await expect(page.locator('.planning-import')).toContainText('이번 방문에만 기억');await expect(page.locator('.preparation-list')).toContainText('파일에서 가져온 메모');
  expect(await page.evaluate(()=>localStorage.getItem('benefit-planning:v2:guest'))).toBeNull();
 });
+
+test('period filters survive reload, detail navigation and reset',async({page})=>{
+ const variants=[{...benefits[0],periodType:'dated'},{...benefits[1],deadline:null,periodLabel:'상시신청',periodType:'ongoing'},{...benefits[2],deadline:null,periodLabel:'상시(예산 소진 시 종료)',periodType:'guidance'}];
+ await page.route('**/api/benefits?**',route=>{
+  const p=new URL(route.request().url()).searchParams;
+  const items=variants.filter(b=>(!p.get('periodType')||p.get('periodType')==='all'||b.periodType===p.get('periodType'))&&(!p.get('region')||p.get('region')==='전체'||b.region===p.get('region')));
+  return route.fulfill({json:{items,total:items.length,totalPages:1,page:1,size:12,demo:false}});
+ });
+ await page.goto('/?region=서울&periodType=ongoing');await expect(cards(page)).toHaveCount(1);
+ await expect(page.getByLabel('신청 기간 구분')).toHaveValue('ongoing');await expect(cards(page)).toContainText('상시 신청');
+ await page.getByLabel('신청 기간 구분').selectOption('dated');await expect(cards(page)).toContainText('날짜 마감');
+ await page.getByRole('button',{name:'강남 주거 지원 자세히 보기',exact:true}).click();await page.goBack();await expect(page.getByLabel('신청 기간 구분')).toHaveValue('dated');
+ await page.reload();await expect(cards(page)).toHaveCount(1);await expect(page.getByLabel('신청 기간 구분')).toHaveValue('dated');
+ await page.getByRole('button',{name:'조건 초기화',exact:true}).click();await expect(cards(page)).toHaveCount(3);await expect(page.getByLabel('신청 기간 구분')).toHaveValue('all');
+ await page.getByLabel('신청 기간 구분').selectOption('guidance');await expect(cards(page)).toContainText('별도 안내');
+ await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
+
+test('member district preferences survive failed saves, reload and apply to strict search',async({page})=>{
+ await member(page);let fail=false;
+ let profile={region:'서울',district:'은평구',category:'전체',notificationsEnabled:true};
+ await page.route('**/api/account/profile',r=>{
+  if(r.request().method()==='PUT'){if(fail)return r.fulfill({status:503,json:{}});profile=r.request().postDataJSON();}
+  return r.fulfill({json:profile});
+ });
+ await page.goto('/');await page.getByRole('button',{name:/내 계정/}).click();await expect(page.getByLabel('관심 시·군·구')).toHaveValue('은평구');
+ await page.getByLabel('관심 시·군·구').selectOption('강남구');fail=true;await page.getByRole('button',{name:'조건 저장',exact:true}).click();
+ await expect(page.getByRole('alert')).toContainText('연결이 지연');await expect(page.getByLabel('관심 시·군·구')).toHaveValue('강남구');expect(profile.district).toBe('은평구');
+ fail=false;await page.getByRole('button',{name:'조건 저장',exact:true}).click();await expect(page.getByText('맞춤 조건을 저장했어요.',{exact:true})).toBeVisible();expect(profile.district).toBe('강남구');
+ await page.reload();await page.getByRole('button',{name:/내 계정/}).click();await expect(page.getByLabel('관심 시·군·구')).toHaveValue('강남구');
+ await page.getByRole('button',{name:'이 조건으로 찾아보기'}).click();await expect(page).toHaveURL(/district=/);await expect(page.getByLabel('시·군·구',{exact:true})).toHaveValue('강남구');await expect(cards(page)).toHaveCount(1);
+ await page.getByRole('button',{name:/내 계정/}).click();await page.getByLabel('관심 지역',{exact:true}).selectOption('경기');await expect(page.getByLabel('관심 시·군·구')).toHaveValue('');
+ await page.getByLabel('관심 시·군·구').selectOption('성남시');await page.setViewportSize({width:390,height:844});expect(await page.locator('.account-dialog').evaluate(e=>e.scrollWidth<=e.clientWidth)).toBe(true);
+ page.once('dialog',d=>d.dismiss());await page.getByLabel('내 계정 닫기').click();await expect(page.getByLabel('관심 시·군·구')).toHaveValue('성남시');
+});
+
+test('district preference choices remain usable when latest district lookup fails',async({page})=>{
+ await member(page);await page.route('**/api/regions/districts?**',r=>r.fulfill({status:503,json:{}}));
+ await page.goto('/');await page.getByRole('button',{name:/내 계정/}).click();await expect(page.getByRole('button',{name:'조건 저장',exact:true})).toBeEnabled();
+ await page.getByLabel('관심 지역',{exact:true}).selectOption('서울');await page.getByLabel('관심 시·군·구').selectOption('은평구');
+ await expect(page.getByText('최신 시군구 목록을 확인하지 못해 저장된 목록을 표시해요.')).toBeVisible();await expect(page.getByLabel('관심 시·군·구')).toHaveValue('은평구');
+ await page.getByLabel('관심 지역',{exact:true}).selectOption('전체');await expect(page.getByLabel('관심 시·군·구')).toHaveValue('');await expect(page.getByLabel('관심 시·군·구')).toBeDisabled();
+});
+
+test('an old profile API cannot falsely confirm a district save',async({page})=>{
+ await member(page);
+ await page.goto('/');await page.getByRole('button',{name:/내 계정/}).click();await expect(page.getByRole('button',{name:'조건 저장',exact:true})).toBeEnabled();
+ await page.getByLabel('관심 지역',{exact:true}).selectOption('서울');await page.getByLabel('관심 시·군·구').selectOption('은평구');
+ await page.getByRole('button',{name:'조건 저장',exact:true}).click();
+ await expect(page.getByRole('alert')).toContainText('시군구 조건의 저장 결과를 확인하지 못했어요');
+ await expect(page.getByLabel('관심 시·군·구')).toHaveValue('은평구');await expect(page.getByText('맞춤 조건을 저장했어요.',{exact:true})).toHaveCount(0);
+});

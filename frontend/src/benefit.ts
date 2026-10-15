@@ -11,6 +11,7 @@ export type Benefit = {
   applicationMethod: string;
   deadline: string | null;
   periodLabel: string;
+  periodType?: 'dated' | 'ongoing' | 'guidance';
   sourceUrl: string;
   sourceKind?: string | null;
   updatedAt?: string | null;

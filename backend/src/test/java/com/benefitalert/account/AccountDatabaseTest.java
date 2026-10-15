@@ -11,7 +11,7 @@ class AccountDatabaseTest {
   var a=new AccountService(db.jdbc);UUID alice=UUID.randomUUID(),bob=UUID.randomUUID();
   a.update(alice,new AccountService.Preferences("서울","주거",true));a.addSaved(alice,List.of("seoul","missing"));a.addSaved(bob,List.of("busan"));
   assertEquals(List.of("seoul"),a.saved(alice));assertEquals(List.of("busan"),a.removeSaved(bob,"seoul"));assertEquals(List.of("seoul"),a.addSaved(alice,List.of()));
-  var alerts=a.notifications(alice);assertEquals(3,alerts.size());assertEquals(3,a.notifications(alice).size());assertTrue(a.notifications(bob).isEmpty());
+  var alerts=a.notifications(alice);assertEquals(2,alerts.size());assertEquals(2,a.notifications(alice).size());assertTrue(a.notifications(bob).isEmpty());
   long id=alerts.getFirst().id();a.read(bob,id);assertFalse(a.notifications(alice).stream().filter(n->n.id()==id).findFirst().orElseThrow().read());a.read(alice,id);assertTrue(a.notifications(alice).stream().filter(n->n.id()==id).findFirst().orElseThrow().read());
   var repo=new PostgresBenefitRepository(db.jdbc);
   var page=repo.search(new BenefitSearch("","서울","주거",true,1,1,"deadline",null,null));assertEquals(1,page.total());assertEquals("seoul",page.items().getFirst().id());

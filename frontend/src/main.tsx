@@ -1,3 +1,4 @@
+import { periodLabels, periodType as classifyPeriod, type PeriodFilter } from "./applicationPeriod";
 import { DataReportDialog } from "./DataReportDialog";
 import { dataTime } from "./dataReport";
 import { readSearchState, searchRegions } from "./searchState";
@@ -184,6 +185,8 @@ function App() {
     [category, rawCategory] = useState(
       () => initialParams().category,
     );
+  const [periodType, rawPeriodType] = useState<PeriodFilter>(() => initialParams().periodType);
+  const setPeriodType = (value: PeriodFilter) => { rawPeriodType(value); setPage(1); };
   const [districtOptions, setDistrictOptions] = useState<{region: string; items: string[]; loading: boolean; error: boolean; cached: boolean}>({region: "", items: [], loading: false, error: false, cached: false});
   const [districtRetry, setDistrictRetry] = useState(0);
   const [openOnly, rawOpen] = useState(
@@ -279,6 +282,7 @@ function App() {
       rawDistrict(p.district);
       rawCategory(p.category);
       rawOpen(p.openOnly);
+      rawPeriodType(p.periodType);
       rawSavedOnly(p.savedOnly);
       rawSort(p.sort);
       setPage(p.page);
@@ -294,13 +298,14 @@ function App() {
     if (region !== "전체") u.searchParams.set("region", region);
     if (district && region !== "전체") u.searchParams.set("district", district);
     if (category !== "전체") u.searchParams.set("category", category);
+    if (periodType !== "all") u.searchParams.set("periodType", periodType);
     if (openOnly) u.searchParams.set("openOnly", "true");
     if (savedOnly) u.searchParams.set("view", "saved");
     if (sort !== "default") u.searchParams.set("sort", sort);
     if (page > 1) u.searchParams.set("page", String(page));
     if (detailId) u.searchParams.set("benefit", detailId);
     history.replaceState(null, "", u);
-  }, [q, region, district, category, openOnly, savedOnly, sort, page, detailId]);
+  }, [q, region, district, category, periodType, openOnly, savedOnly, sort, page, detailId]);
   useEffect(() => {
     const abort = new AbortController();
     if (region === "전체") {
@@ -369,7 +374,7 @@ function App() {
     return () => abort.abort();
   }, [detailId, retry]);
   const activeFilters = Boolean(
-    q.trim() || region !== "전체" || category !== "전체" || openOnly,
+    q.trim() || region !== "전체" || category !== "전체" || periodType !== "all" || openOnly,
   );
   useEffect(() => {
     const abort = new AbortController();
@@ -382,6 +387,7 @@ function App() {
           region,
           district,
           category,
+          periodType,
           openOnly: String(openOnly),
           page: String(page),
           size: "12",
@@ -427,6 +433,7 @@ function App() {
     region,
     district,
     category,
+    periodType,
     openOnly,
     retry,
     page,
@@ -458,6 +465,7 @@ function App() {
     setRegion("전체");
     setCategory("전체");
     setOpenOnly(false);
+    setPeriodType("all");
     setSort("default");
   }
   function showList(savedView: boolean) {
@@ -641,6 +649,13 @@ function App() {
               {accountCategories.map((c) => <option key={c} value={c}>{c === "전체" ? "모든 분야" : c}</option>)}
             </select>
           </label>
+          <label className="period-field">
+            <span className="field-label">신청 기간</span>
+            <select aria-label="신청 기간 구분" value={periodType} onChange={e => setPeriodType(e.target.value as PeriodFilter)}>
+              <option value="all">모든 신청 기간</option>
+              {Object.entries(periodLabels).map(([value,label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </label>
           <label className="keyword-field">
             <span className="field-label">검색어</span>
             <span className="input-wrap">
@@ -660,6 +675,7 @@ function App() {
             혜택 찾기 <Icon name="arrow" />
           </button>
         </form>
+        <p className="period-help">상시 신청은 원문에 상시·연중 접수가 명시된 공고예요. 별도 안내에는 기관별 기간·조건부 접수·신청 불필요 등이 포함돼요. 정확한 기간과 접수 여부는 상세 원문을 확인해 주세요.</p>
         {region !== "전체" && <div className="district-help">
           <p role="status" aria-live="polite">
             {districtOptions.error
@@ -760,6 +776,7 @@ function App() {
                     <Icon name="close" />
                   </button>
                 )}
+                {periodType !== "all" && <button onClick={() => setPeriodType("all")}>{periodLabels[periodType]}<span className="sr-only"> 기간 조건 해제</span><Icon name="close" /></button>}
                 {district && <button onClick={() => setDistrict("")}>
                   {district}<span className="sr-only"> 세부 지역 해제</span><Icon name="close" />
                 </button>}
@@ -868,6 +885,7 @@ function App() {
                   <article className="benefit-card" key={b.id}>
                     <div className="card-top">
                       <span className="tag">{b.category}</span>
+                      <span className="tag">{periodLabels[classifyPeriod(b)]}</span>
                       <span className="card-region">{b.region}{b.district ? ` ${b.district}` : ""}</span>
                       <button
                         className={`bookmark-button ${saved.includes(b.id) ? "is-saved" : ""}`}
@@ -1110,7 +1128,7 @@ function App() {
           <>
             <div className="dialog-top">
               <span className="tag">
-                {selected.category} · {selected.region}{selected.district ? ` ${selected.district}` : ""}
+                {periodLabels[classifyPeriod(selected)]} · {selected.category} · {selected.region}{selected.district ? ` ${selected.district}` : ""}
               </span>
               <button
                 className="close-button"
@@ -1237,6 +1255,7 @@ function App() {
           onOpen={openDetail}
           onApply={(p) => {
             setRegion(p.region);
+            setDistrict(p.district || "");
             setCategory(p.category);
             setSavedOnly(false);
             goToResults();

@@ -118,7 +118,7 @@ export function PreparationDialog({ planning, onClose, onDetail }: {
       </select></label>
       <label>마감 조건<select aria-label="신청 준비 마감 조건" value={deadlineFilter} onChange={event => setDeadlineFilter(event.target.value as DeadlineFilter)}>
         <option value="all">모든 기간</option><option value="week">7일 이내 마감</option><option value="month">30일 이내 마감</option>
-        <option value="expired">마감된 공고</option><option value="unknown">마감일 미정</option>
+        <option value="expired">마감된 공고</option><option value="unknown">마감일 미정 전체</option><option value="ongoing">상시 신청</option><option value="guidance">별도 안내</option>
       </select></label>
       <label>정렬<select aria-label="신청 준비 정렬" value={sort} onChange={event => setSort(event.target.value)}>
         <option value="record">기록순</option><option value="deadline">마감 가까운 순</option>

@@ -24,15 +24,18 @@ public class BenefitController {
   if(region.length()>100) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
   return repository.districts(region);
  }
+ public Result list(String q,String region,String category,boolean openOnly,int page,int size,String sort,List<String> ids,boolean savedOnly,String token,String district) {
+  return list(q,region,category,openOnly,page,size,sort,ids,savedOnly,token,district,"all");
+ }
  @GetMapping("/benefits")
  public Result list(@RequestParam(defaultValue="") String q,@RequestParam(defaultValue="전체") String region,
   @RequestParam(defaultValue="전체") String category,@RequestParam(defaultValue="false") boolean openOnly,
   @RequestParam(defaultValue="1") int page,@RequestParam(defaultValue="12") int size,@RequestParam(defaultValue="default") String sort,
   @RequestParam(required=false) List<String> ids,@RequestParam(defaultValue="false") boolean savedOnly,
-  @RequestHeader(value="Authorization",required=false) String token,@RequestParam(defaultValue="") String district) {
+  @RequestHeader(value="Authorization",required=false) String token,@RequestParam(defaultValue="") String district,@RequestParam(defaultValue="all") String periodType) {
   if(savedOnly && !environment.acceptsProfiles(Profiles.of("prod"))) throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE);
   var user=savedOnly?identity.requireUser(token):null;
-  var result=repository.search(new BenefitSearch(q,region,category,openOnly,page,size,sort,ids,user,district));
+  var result=repository.search(new BenefitSearch(q,region,category,openOnly,page,size,sort,ids,user,district,periodType));
   return new Result(result.items(),environment.acceptsProfiles(Profiles.of("demo")),result.total(),page,size,(result.total()+size-1)/size);
  }
  @GetMapping("/benefits/{id}") public Benefit detail(@PathVariable String id) {return repository.findById(id).orElseThrow(()->new ResponseStatusException(HttpStatus.NOT_FOUND));}

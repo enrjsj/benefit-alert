@@ -1,3 +1,4 @@
+import { periodType } from "./applicationPeriod.ts";
 import type { Benefit } from "./benefit";
 
 export function seoulToday(now = new Date()): string {
@@ -17,10 +18,11 @@ export function deadlineLabel(date: string, today = seoulToday()): string {
   const days = deadlineDays(date, today);
   return days === null ? "기간 확인 필요" : days < 0 ? "마감" : days === 0 ? "오늘 마감" : `D-${days}`;
 }
-export type DeadlineFilter = "all" | "week" | "month" | "expired" | "unknown";
+export type DeadlineFilter = "all" | "week" | "month" | "expired" | "unknown" | "ongoing" | "guidance";
 export function matchesDeadline(benefit: Benefit | undefined, filter: DeadlineFilter, today = seoulToday()): boolean {
   if (filter === "all") return true;
   if (!benefit) return false;
+  if (filter === "ongoing" || filter === "guidance") return periodType(benefit) === filter;
   const days = deadlineDays(benefit.deadline, today);
   if (filter === "unknown") return days === null;
   if (days === null) return false;

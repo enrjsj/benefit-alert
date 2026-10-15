@@ -30,6 +30,7 @@ public class PostgresBenefitRepository implements BenefitRepository {
    p.put("district",s.district());
   }
   if (!s.category().equals("전체")) { where.append(" AND b.category=:category"); p.put("category", s.category()); }
+  if (!s.periodType().equals("all")) { where.append(" AND ("+ApplicationPeriod.SQL+")=:periodType"); p.put("periodType",s.periodType()); }
   if (s.openOnly()) { where.append(" AND (b.deadline IS NULL OR b.deadline >= :today)"); p.put("today", s.today()); }
   if (s.ids()!=null) {
    if(s.ids().isEmpty()) where.append(" AND false");

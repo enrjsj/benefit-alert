@@ -52,6 +52,14 @@ class AccountFlowIntegrationTest {
    mvc.perform(get("/api/account/planning").header("Authorization",a)).andExpect(jsonPath("$.revision").value(1)).andExpect(jsonPath("$.data.applications.flow-benefit.note").value("개인 메모"));
    mvc.perform(get("/api/account/planning").header("Authorization","Bearer invalid-integration-token")).andExpect(status().isUnauthorized()).andExpect(header().string("Cache-Control","no-store"));
    mvc.perform(get("/api/account/planning")).andExpect(status().isUnauthorized());
+   mvc.perform(put("/api/account/profile").header("Authorization",a).contentType("application/json")
+    .content("{\"region\":\"서울\",\"district\":\"은평구\",\"category\":\"주거\",\"notificationsEnabled\":true}"))
+    .andExpect(status().isOk()).andExpect(jsonPath("$.district").value("은평구"));
+   mvc.perform(get("/api/account/profile").header("Authorization",a)).andExpect(jsonPath("$.district").value("은평구"));
+   mvc.perform(get("/api/account/profile").header("Authorization",b)).andExpect(jsonPath("$.district").value(""));
+   mvc.perform(put("/api/account/profile").header("Authorization",a).contentType("application/json")
+    .content("{\"region\":\"서울\",\"category\":\"생활\",\"notificationsEnabled\":false}"))
+    .andExpect(status().isOk()).andExpect(jsonPath("$.district").value("은평구"));
   } finally {upstream.stop(0);}
  }
 }
