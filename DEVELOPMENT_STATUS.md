@@ -314,3 +314,5 @@
 - 보안 사전 점검: 개인 테이블 RLS 유지 및 Spring 인증 API 전용 접근. [RLS 정책 없음 안내](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy) 4개는 기존 직접 접근 차단 설계에 해당하며 권한을 넓히지 않음.
 
 - 로컬 최종 검증: PostgreSQL 통합 포함 백엔드 48개(건너뜀 0), 프런트 단위 52개, Chromium 33개, Python 5개로 총 138개 통과. TypeScript/Vite 빌드 및 변경 파일 공백 검사 통과. 운영 배포·실데이터 보정 결과는 배포 후 기록.
+
+- 최초 Render 빌드에서 교차 프로젝트 목록 일치 테스트가 Docker에 없는 프런트 파일을 참조해 실패. 목록 일치 검증을 프런트 단위 테스트로 이동하고 백엔드는 자체 목록의 지역 검증을 유지해 독립 빌드 지원. 제품 코드 변경 없이 테스트 배치를 보완.

@@ -3,7 +3,6 @@ package com.benefitalert;
 import com.benefitalert.account.AccountService;
 import com.benefitalert.collection.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import java.nio.file.*;
 import java.time.LocalDate;
 import java.util.*;
 import org.junit.jupiter.api.Test;
@@ -28,9 +27,14 @@ class ScopeBundleTest {
   for(String period:List.of("상시신청(예산 소진 시 종료)","상시신청 아님","접수기관 별 상이","신청불필요","매년 1월","","2027.1.1~")) assertEquals("guidance",ApplicationPeriod.classify(null,period));
   assertEquals("dated",ApplicationPeriod.classify(LocalDate.of(2020,1,1),"상시신청"));
  }
- @Test void bundledDistrictCatalogMatchesFrontend() throws Exception {
+ @Test void bundledDistrictCatalogSupportsRegionValidation() throws Exception {
   var mapper=new ObjectMapper();
-  assertEquals(mapper.readTree(Files.readString(Path.of("../frontend/src/district-options.json"))),mapper.readTree(DistrictCatalog.class.getResourceAsStream("/district-options.json")));
+  var catalog=mapper.readTree(DistrictCatalog.class.getResourceAsStream("/district-options.json"));
+  assertEquals(17,catalog.size());
+  assertTrue(DistrictCatalog.contains("서울","강남구"));
+  assertTrue(DistrictCatalog.contains("전남","영암군"));
+  assertFalse(DistrictCatalog.contains("경기","강남구"));
+  assertFalse(DistrictCatalog.contains("전체","강남구"));
  }
  @Test @EnabledIfEnvironmentVariable(named="TEST_DATABASE_URL",matches=".+")
  void migrationAndSqlDistrictAgreeAndPreserveOriginalRows() {

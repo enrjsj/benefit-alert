@@ -1,5 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
 import {createDistrictCache, requestDistricts, mergeDistrictOptions} from '../src/districts.ts';
 test('a hanging request and hanging JSON body both time out',async()=>{
  for(const fetcher of [()=>new Promise(()=>{}),async()=>({ok:true,json:()=>new Promise(()=>{})})])
@@ -30,6 +31,8 @@ test('storage denial preserves an in-memory cache',()=>{
 
 test('bundled districts support first visits without network or storage',async()=>{
  const {default:lists}=await import('../src/district-options.json',{with:{type:'json'}});
+ const backend=JSON.parse(await readFile(new URL('../../backend/src/main/resources/district-options.json',import.meta.url),'utf8'));
+ assert.deepEqual(lists,backend);
  assert.equal(lists['경기'].length,31);
  assert.ok(lists['경기'].includes('수원시'));
  assert.equal(lists['서울'].length,25);
