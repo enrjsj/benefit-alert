@@ -282,7 +282,9 @@ test('favorite lookup errors are retryable and never classify records as unavail
   await page.goto('/?view=saved'); await page.getByRole('button',{name:'관심목록 관리',exact:true}).click();
   const dialog=page.getByRole('dialog',{name:'관심목록 관리'});
   await expect(dialog).toContainText('공고를 확인하지 못했어요');
-  await expect(dialog.getByRole('button',{name:'관심 해제'})).toHaveCount(0);
+  await expect(dialog.getByRole('button',{name:'관심 해제'})).toHaveCount(1);
+  await expect(dialog).toContainText('확인 대기 1개');
+  await expect(dialog).not.toContainText('더 이상 제공되지 않는 공고');
   fail=false; await dialog.getByRole('button',{name:'다시 불러오기'}).click();
   await expect(dialog).toContainText('강남 주거 지원');
 });
@@ -605,4 +607,56 @@ test('collection warnings show repeated failures, active recovery and return to 
  await page.reload();await expect(page.locator('.data-status')).toContainText('인증 문제');
  status={...status,attentionReason:'NONE',consecutiveFailures:0,freshness:'CURRENT',latest:{status:'SUCCESS',finishedAt:null,fetchedCount:100}};
  await page.reload();await expect(page.locator('.data-status')).toContainText('공식 공고 전체 업데이트');await expect(page.locator('.data-status')).not.toContainText('연속');
+});
+
+
+test('public lookup outage keeps personal notes editable and unknown deadlines out of filters', async ({page}) => {
+ await page.addInitScript(()=>localStorage.setItem('benefit-planning:v2:guest',JSON.stringify({version:1,compareIds:[],checklists:{},applications:{a:{status:'preparing',note:'기존 메모'}}})));
+ await page.route('**/api/benefits?**',r=>new URL(r.request().url()).searchParams.get('size')==='100'?r.fulfill({status:503,json:{}}):r.fallback());
+ await page.goto('/');await page.getByRole('button',{name:'신청 준비 1',exact:true}).click();
+ const dialog=page.getByRole('dialog',{name:'내 신청 준비'});
+ await expect(dialog.getByRole('alert')).toContainText('계속 확인하고 편집');
+ await expect(dialog.locator('li')).toContainText('기존 메모');
+ await expect(dialog).not.toContainText('더 이상 제공되지 않는 공고');
+ await page.getByLabel('신청 준비 공고 제공 상태',{exact:true}).selectOption('missing');await expect(dialog.locator('.preparation-list li')).toHaveCount(0);
+ await page.getByLabel('신청 준비 공고 제공 상태',{exact:true}).selectOption('unknown');await expect(dialog.locator('.preparation-list li')).toHaveCount(1);
+ await page.getByLabel('신청 준비 마감 조건',{exact:true}).selectOption('unknown');await expect(dialog.locator('.preparation-list li')).toHaveCount(0);
+ await page.getByLabel('신청 준비 마감 조건',{exact:true}).selectOption('all');
+ await dialog.getByRole('button',{name:'신청 기록 편집'}).click();await page.getByLabel('내 메모',{exact:true}).fill('장애 중 저장');
+ await page.getByRole('button',{name:'신청 기록 저장',exact:true}).click();
+ expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('benefit-planning:v2:guest')!).applications.a.note)).toBe('장애 중 저장');
+ await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
+
+test('partial lookup preserves successful batches and retry restores unknown favorites', async ({page}) => {
+ const ids=['a',...Array.from({length:100},(_,i)=>'missing-'+i)];
+ await member(page);
+ await page.route('**/api/account/saved',r=>r.fulfill({json:ids}));
+ let fail=true;
+ await page.route('**/api/benefits?**',r=>{const p=new URL(r.request().url()).searchParams;return p.get('size')==='100'&&p.getAll('ids').includes('missing-99')&&fail?r.fulfill({status:503,json:{}}):r.fallback();});
+ await page.goto('/?view=saved');await page.getByRole('button',{name:'관심목록 관리',exact:true}).click();const dialog=page.getByRole('dialog',{name:'관심목록 관리'});
+ await expect(dialog).toContainText('조회 중단 99개 · 확인 대기 1개');await expect(dialog).toContainText('강남 주거 지원');
+ await page.getByLabel('관심목록 공고 조건',{exact:true}).selectOption('unknown');await expect(dialog.locator('li')).toHaveCount(1);
+ fail=false;await dialog.getByRole('button',{name:'다시 불러오기'}).click();await expect(dialog).toContainText('조회 중단 100개 · 확인 대기 0개');await expect(dialog.locator('li')).toHaveCount(0);
+});
+
+test('slow lookup never blocks editing records or labels them unavailable', async ({page}) => {
+ await page.addInitScript(()=>localStorage.setItem('benefit-planning:v2:guest',JSON.stringify({version:1,compareIds:[],checklists:{},applications:{a:{status:'preparing',note:'대기 중'}}})));
+ let release!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve;});
+ await page.route('**/api/benefits?**',async r=>{if(new URL(r.request().url()).searchParams.get('size')==='100') {await gate;return r.fulfill({json:{items:[benefits[0]]}});}return r.fallback();});
+ await page.goto('/');await page.getByRole('button',{name:'신청 준비 1',exact:true}).click();
+ await expect(page.getByText('공고 정보 확인 대기',{exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'신청 기록 편집',exact:true}).click();await page.getByLabel('내 메모',{exact:true}).fill('응답 전에 작성');
+ release();await expect(page.getByLabel('내 메모',{exact:true})).toHaveValue('응답 전에 작성');
+ await page.getByRole('button',{name:'신청 기록 저장',exact:true}).click();await page.getByRole('button',{name:'신청 준비 목록으로'}).click();
+ await expect(page.locator('.preparation-list')).toContainText('강남 주거 지원');await expect(page.locator('.preparation-list')).toContainText('응답 전에 작성');
+});
+
+test('removing an unconfirmed favorite preserves its application record', async ({page}) => {
+ await page.addInitScript(()=>{localStorage.setItem('benefit-saved',JSON.stringify(['a']));localStorage.setItem('benefit-planning:v2:guest',JSON.stringify({version:1,compareIds:[],checklists:{},applications:{a:{status:'submitted',note:'지우지 않을 메모'}}}));});
+ await page.route('**/api/benefits?**',r=>new URL(r.request().url()).searchParams.get('size')==='100'?r.fulfill({status:503,json:{}}):r.fallback());
+ await page.goto('/?view=saved');await page.getByRole('button',{name:'관심목록 관리',exact:true}).click();const dialog=page.getByRole('dialog',{name:'관심목록 관리'});
+ await expect(dialog.getByRole('alert')).toBeVisible();page.once('dialog',d=>d.dismiss());await dialog.getByRole('button',{name:'관심 해제'}).click();await expect(dialog.locator('li')).toHaveCount(1);
+ page.once('dialog',d=>d.accept());await dialog.getByRole('button',{name:'관심 해제'}).click();await expect(dialog).toContainText('저장한 관심 공고가 없어요');
+ expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('benefit-planning:v2:guest')!).applications.a.note)).toBe('지우지 않을 메모');
 });

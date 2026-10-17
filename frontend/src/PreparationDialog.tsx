@@ -1,14 +1,12 @@
 import { PlanningImportPanel } from "./PlanningImportPanel";
 import { exportPlanning, matchesPlanningSearch } from "./planningExport";
 import { ApplicationRecordEditor } from "./ApplicationRecordEditor";
-import { fetchJsonResponse } from "./request";
+import { useBenefitLookup } from "./useBenefitLookup";
 import { useEffect, useRef, useState } from "react";
-import type { Benefit } from "./benefit";
 import type { PlanningState } from "./PlanningPanel";
 import { checklistSteps, trackedIds, applicationStatuses } from "./planning";
 import { deadlineDays, deadlineLabel, matchesDeadline, seoulToday, type DeadlineFilter } from "./deadline";
 import { DeadlineCalendarButton } from "./DeadlineCalendarButton";
-const base = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 
 export function PreparationDialog({ planning, onClose, onDetail }: {
   planning: PlanningState; onClose: () => void; onDetail: (id: string) => void;
@@ -21,17 +19,13 @@ export function PreparationDialog({ planning, onClose, onDetail }: {
   const mayLeave = () => !dirty || window.confirm("저장하지 않은 신청 기록을 버릴까요?");
   const close = () => { if (mayLeave()) onClose(); };
   const dialog = useRef<HTMLDialogElement>(null);
-  const [items, setItems] = useState<Benefit[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-  const [retry, setRetry] = useState(0);
   const [filter, setFilter] = useState("all");
   const [applicationFilter, setApplicationFilter] = useState("all");
   const [deadlineFilter, setDeadlineFilter] = useState<DeadlineFilter>("all");
   const [sort, setSort] = useState("record");
   const [today, setToday] = useState(seoulToday);
   const ids = trackedIds(planning.data);
-  const joined = JSON.stringify(ids);
+  const { items, checked, loading, error, reload } = useBenefitLookup(ids);
   useEffect(() => { dialog.current?.showModal(); }, []);
   useEffect(() => {
     const update = () => setToday(seoulToday());
@@ -39,27 +33,6 @@ export function PreparationDialog({ planning, onClose, onDetail }: {
     addEventListener("focus", update);
     return () => { clearInterval(timer); removeEventListener("focus", update); };
   }, []);
-  useEffect(() => {
-    const abort = new AbortController();
-    setLoading(true); setError(false); setItems([]);
-    void (async () => {
-      try {
-        const result: Benefit[] = [];
-        for (let offset = 0; offset < ids.length; offset += 100) {
-          const params = new URLSearchParams({ size: "100" });
-          ids.slice(offset, offset + 100).forEach((id) => params.append("ids", id));
-          const response = await fetchJsonResponse(`${base}/api/benefits?${params}`, { signal: abort.signal });
-          if (!response.ok) throw Error();
-          const data = await response.json();
-          if (!Array.isArray(data.items)) throw Error();
-          result.push(...data.items);
-        }
-        if (!abort.signal.aborted) setItems(result);
-      } catch { if (!abort.signal.aborted) setError(true); }
-      finally { if (!abort.signal.aborted) setLoading(false); }
-    })();
-    return () => abort.abort();
-  }, [joined, retry]);
   function download(format: "json" | "csv") {
     setExportMessage("");
     try {
@@ -75,9 +48,9 @@ export function PreparationDialog({ planning, onClose, onDetail }: {
   const completed = ids.filter((id) => planning.data.checklists[id]?.length === checklistSteps.length);
   const byId = new Map(items.map(item => [item.id, item]));
   const shown = ids.filter(id => (filter === "all" || (filter === "done" ? completed.includes(id) : !completed.includes(id)))
-    && (availability === "all" || (availability === "missing" ? !byId.has(id) : byId.has(id)))
+    && (availability === "all" || (availability === "missing" ? checked.has(id) && !byId.has(id) : availability === "unknown" ? !checked.has(id) : byId.has(id)))
     && matchesPlanningSearch(id, planning.data, byId.get(id), query)
-    && matchesDeadline(byId.get(id), deadlineFilter, today)
+    && (deadlineFilter === "all" || (checked.has(id) && matchesDeadline(byId.get(id), deadlineFilter, today)))
     && (applicationFilter === "all" || planning.data.applications[id]?.status === applicationFilter));
   if (sort === "deadline") shown.sort((a, b) =>
     (deadlineDays(byId.get(a)?.deadline, today) ?? Infinity) - (deadlineDays(byId.get(b)?.deadline, today) ?? Infinity));
@@ -91,7 +64,7 @@ export function PreparationDialog({ planning, onClose, onDetail }: {
         <button className="secondary-button" disabled={!planning.ready || planning.busy} onClick={() => download("json")}>전체 기록 JSON 다운로드</button>
         <button className="secondary-button" disabled={!planning.ready || planning.busy || loading} onClick={() => download("csv")}>전체 기록 CSV 다운로드</button>
       </div>
-      <p className="planning-help">검색 조건과 관계없이 저장된 전체 기록을 내려받아요. JSON에는 비교 목록도 포함돼요. 파일에는 개인 메모가 포함돼요. JSON 파일은 아래 가져오기에서 다시 합칠 수 있어요.</p>
+      <p className="planning-help">검색 조건과 관계없이 저장된 전체 기록을 내려받아요. JSON에는 비교 목록도 포함돼요. 파일에는 개인 메모가 포함돼요. JSON 파일은 아래 가져오기에서 다시 합칠 수 있어요. 확인하지 못한 공고는 CSV 제목·마감일이 비어 있을 수 있어요.</p>
       {exportMessage && <p role="status">{exportMessage}</p>}
     </section>
     <PlanningImportPanel planning={planning} items={items} />
@@ -111,7 +84,7 @@ export function PreparationDialog({ planning, onClose, onDetail }: {
       <p className="planning-help">직접 저장한 기록 기준이에요. 조회 중단은 기관의 선정 결과를 의미하지 않아요.</p>
     </section>}
     <div className="preparation-deadlines">
-      <label>공고 제공 상태<select aria-label="신청 준비 공고 제공 상태" value={availability} onChange={event => setAvailability(event.target.value)}><option value="all">모든 공고</option><option value="available">조회 가능한 공고</option><option value="missing">조회 중단 공고</option></select></label>
+      <label>공고 제공 상태<select aria-label="신청 준비 공고 제공 상태" value={availability} onChange={event => setAvailability(event.target.value)}><option value="all">모든 공고</option><option value="available">조회 가능한 공고</option><option value="missing">조회 중단 공고</option><option value="unknown">확인 대기 공고</option></select></label>
       <label>신청 상태<select aria-label="신청 준비 신청 상태" value={applicationFilter} onChange={event => setApplicationFilter(event.target.value)}>
         <option value="all">모든 신청 상태</option>
         {Object.entries(applicationStatuses).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
@@ -129,9 +102,10 @@ export function PreparationDialog({ planning, onClose, onDetail }: {
       {[["all", `전체 ${ids.length}`], ["progress", `진행 중 ${ids.length - completed.length}`], ["done", `확인 완료 ${completed.length}`]].map(([value, label]) =>
         <button key={value} className="secondary-button" aria-pressed={filter === value} onClick={() => setFilter(value)}>{label}</button>)}
     </div>
+    {loading && <p role="status">공고 정보를 확인하고 있어요. 저장한 기록은 지금 편집할 수 있어요.</p>}
+    {error && <div role="alert"><p>공고 정보를 일부 확인하지 못했어요. 준비 기록은 계속 확인하고 편집할 수 있어요. 확인 대기는 제공 중단을 의미하지 않아요.</p><button disabled={loading} className="secondary-button" onClick={reload}>다시 불러오기</button></div>}
     {!planning.ready && !planning.busy && planning.message ? <p>위의 ‘계정 기록 새로고침’을 눌러 다시 불러와 주세요.</p>
-      : !planning.ready || loading ? <p role="status">신청 준비 정보를 불러오고 있어요…</p>
-      : error ? <div role="alert"><p>공고 정보를 불러오지 못했어요. 준비 기록은 유지돼요.</p><button className="secondary-button" onClick={() => setRetry((n) => n + 1)}>다시 불러오기</button></div>
+      : !planning.ready ? <p role="status">신청 준비 정보를 불러오고 있어요…</p>
       : shown.length === 0 ? <div className="planning-empty"><h3>{ids.length ? "선택한 조건에 맞는 기록이 없어요" : "신청 준비를 시작해 보세요"}</h3><p>{ids.length ? "검색어를 지우거나 다른 마감 조건·신청 상태를 선택해 보세요." : "공고 상세에서 체크리스트나 신청 상태·메모를 저장하면 여기에 모여요."}</p>{ids.length > 0 && <button className="secondary-button" onClick={() => { setFilter("all"); setDeadlineFilter("all"); setApplicationFilter("all"); setQuery(""); setAvailability("all"); }}>모든 준비 기록 보기</button>}<button className="primary-button" onClick={close}>혜택 둘러보기</button></div>
       : <ul className="preparation-list">{shown.map((id) => {
         const benefit = byId.get(id);
@@ -139,7 +113,7 @@ export function PreparationDialog({ planning, onClose, onDetail }: {
         const application = planning.data.applications[id];
         return <li key={id}>
           <span className="tag">{count === checklistSteps.length ? "확인 완료" : "진행 중"} · {count}/{checklistSteps.length}</span>
-          <h3>{benefit?.title || "더 이상 제공되지 않는 공고"}</h3>
+          <h3>{benefit?.title || (checked.has(id) ? "더 이상 제공되지 않는 공고" : "공고 정보 확인 대기")}</h3>
           {application && <p className="application-status">신청 상태: {applicationStatuses[application.status]}</p>}
           {application?.note && <p className="application-note">{application.note}</p>}
           {!benefit && <p>공고 번호: {id}. 준비 기록은 보관되어 있어요.</p>}
