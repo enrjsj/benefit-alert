@@ -15,7 +15,7 @@ import { createRoot } from "react-dom/client";
 import "./style.css";
 import type { Benefit } from "./benefit";
 import { SavedDialog } from "./SavedDialog";
-import type { ImportDraft } from "./PlanningImportPanel";
+import { useImportDraft } from "./useImportDraft";
 import { CorrectionsDialog } from "./CorrectionsDialog";
 import { PreparationDialog } from "./PreparationDialog";
 import {
@@ -163,11 +163,7 @@ function App() {
   const saved = account.saved;
   const planningOwner = account.session?.user.id || "guest";
   const planning = usePlanning(planningOwner, account.session?.access_token);
-  const [importPreview, setImportPreview] = useState<{ owner: string; draft: ImportDraft } | null>(null);
-  const importOwner = useRef(planningOwner);
-  importOwner.current = planningOwner;
-  const importDraft = importPreview?.owner === planningOwner ? importPreview.draft : null;
-  useEffect(() => { setImportPreview(null); }, [planningOwner]);
+  const {draft:importDraft,setDraft:setImportDraft,recovery:importRecovery}=useImportDraft(planningOwner,account.state==='ready'||account.state==='disabled');
   useEffect(() => {
     if (!importDraft) return;
     const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
@@ -1230,8 +1226,8 @@ function App() {
         )}
       </dialog>
       {preparationOwner === planningOwner && (
-        <PreparationDialog key={planningOwner} planning={planning} importDraft={importDraft}
-          onImportDraftChange={draft => { if (importOwner.current === planningOwner) setImportPreview(draft ? { owner: planningOwner, draft } : null); }}
+        <PreparationDialog key={planningOwner} planning={planning} importDraft={importDraft} importRecovery={importRecovery}
+          onImportDraftChange={setImportDraft}
           onClose={() => setPreparationOwner(null)}
           onDetail={(id) => { setPreparationOwner(null); openDetail(id); }} />
       )}

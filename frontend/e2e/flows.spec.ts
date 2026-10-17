@@ -409,14 +409,14 @@ async function openImport(page:Page,count:number){await page.getByRole('button',
 test('file import previews conflicts, resolves comparison overflow and persists selected records',async({page})=>{
  await page.addInitScript(()=>{if(!localStorage.getItem('benefit-planning:v2:guest'))localStorage.setItem('benefit-planning:v2:guest',JSON.stringify({version:1,compareIds:['a','b','c'],checklists:{a:['eligibility']},applications:{a:{status:'submitted',note:'현재 메모'}}}));});
  await page.goto('/');await openImport(page,1);await page.getByLabel('JSON 기록 파일',{exact:true}).setInputFiles(importFile(importData));
- const preview=page.getByRole('region',{name:'가져오기 미리보기'});await expect(preview).toContainText('선택 필요 1개');
+ const preview=page.getByRole('region',{name:'가져오기 미리보기'});await expect(preview).toContainText('선택 필요 1개');await page.getByRole('checkbox',{name:'새로고침 후에도 미리보기 이어가기',exact:true}).check();
  await page.setViewportSize({width:390,height:844});expect(await page.locator('.preparation-dialog').evaluate(e=>e.scrollWidth<=e.clientWidth)).toBe(true);
  await expect(page.getByRole('button',{name:'선택한 내용 가져오기'})).toBeDisabled();
  await page.getByRole('radio',{name:/가져온 기록 사용/}).check();await expect(preview).toContainText('비교는 합쳐서 3개');
  await page.getByRole('checkbox',{name:/비교 목록 1개도 합치기/}).uncheck();
  page.once('dialog',d=>d.dismiss());await page.getByRole('button',{name:'선택한 내용 가져오기'}).click();await expect(preview).toBeVisible();
  page.once('dialog',d=>d.accept());await page.getByRole('button',{name:'선택한 내용 가져오기'}).click();
- await expect(page.locator('.planning-import')).toContainText('선택한 기록을 반영했어요');
+ await expect(page.locator('.planning-import')).toContainText('선택한 기록을 반영했어요');expect(await page.evaluate(()=>sessionStorage.getItem('benefit-import-preview:v1'))).toBeNull();
  const stored=await page.evaluate(()=>JSON.parse(localStorage.getItem('benefit-planning:v2:guest')!));
  expect(stored.compareIds).toEqual(['a','b','c']);expect(stored.checklists.a).toEqual(['eligibility','documents']);expect(stored.applications.a.note).toBe('파일에서 가져온 메모');expect(stored.applications.missing.note).toBe('중단 공고 기록');
  await page.getByLabel('신청 준비 공고 제공 상태').selectOption('missing');await expect(page.locator('.preparation-list').filter({has:page.locator('progress')}).locator('li')).toHaveCount(1);
@@ -807,4 +807,32 @@ test('correction review moves keyboard focus and search cancellation preserves r
  await page.getByLabel('검토 범위').selectOption('all');await page.getByRole('button',{name:'요청 #1 검토',exact:true}).click();await expect(page.getByLabel('요청자에게 보낼 답변')).toBeFocused();await page.getByLabel('요청자에게 보낼 답변').fill('작성 중인 답변');
  await page.getByRole('searchbox',{name:'정정 요청 검색',exact:true}).fill('새 검색');page.once('dialog',d=>d.dismiss());await page.getByRole('button',{name:'요청 검색',exact:true}).click();await expect(page.getByLabel('요청자에게 보낼 답변')).toHaveValue('작성 중인 답변');await expect(page.getByText('검색 조건: 새 검색')).toHaveCount(0);
  page.once('dialog',d=>d.accept());await page.getByRole('button',{name:'요청 검색',exact:true}).click();await expect(page.getByLabel('요청자에게 보낼 답변')).toHaveCount(0);await expect(page.getByLabel('정정 요청 내용')).toHaveValue('접수 전 초안');
+});
+
+test('import recovery opt-in survives reload with choices and clears on cancellation',async({page})=>{
+ await page.goto('/');await openImport(page,0);await page.getByLabel('JSON 기록 파일',{exact:true}).setInputFiles(importFile(importData));
+ expect(await page.evaluate(()=>sessionStorage.getItem('benefit-import-preview:v1'))).toBeNull();
+ await page.getByRole('checkbox',{name:/비교 목록 1개도 합치기/}).uncheck();await page.getByRole('checkbox',{name:'새로고침 후에도 미리보기 이어가기',exact:true}).check();
+ await expect(page.getByText('이 탭에 미리보기를 임시 보관했어요.',{exact:false})).toBeVisible();page.once('dialog',d=>d.accept());await page.reload();
+ await page.getByRole('button',{name:'신청 준비 0',exact:true}).click();await expect(page.getByRole('region',{name:'가져오기 미리보기'})).toBeVisible();await expect(page.getByRole('checkbox',{name:/비교 목록 1개도 합치기/})).not.toBeChecked();await expect(page.getByText('임시 보관한 미리보기를 복원했어요.',{exact:false})).toBeVisible();
+ expect(await page.evaluate(()=>localStorage.getItem('benefit-planning:v2:guest'))).toBeNull();await page.getByRole('button',{name:'가져오기 취소',exact:true}).click();expect(await page.evaluate(()=>sessionStorage.getItem('benefit-import-preview:v1'))).toBeNull();
+});
+
+test('import recovery write failure retains preview and logout clears member recovery',async({page})=>{
+ await member(page);await page.goto('/');await expect(page.getByRole('button',{name:/내 계정/})).toBeVisible();await openImport(page,0);await page.getByLabel('JSON 기록 파일',{exact:true}).setInputFiles(importFile(importData));
+ await page.evaluate(()=>{const write=Storage.prototype.setItem;Storage.prototype.setItem=function(k,v){if(k==='benefit-import-preview:v1')throw new DOMException('full','QuotaExceededError');return write.call(this,k,v);};});
+ await page.getByRole('checkbox',{name:'새로고침 후에도 미리보기 이어가기',exact:true}).click();await expect(page.getByText('임시 보관하지 못했어요.',{exact:false})).toBeVisible();await expect(page.getByRole('region',{name:'가져오기 미리보기'})).toBeVisible();await expect(page.getByRole('checkbox',{name:'새로고침 후에도 미리보기 이어가기',exact:true})).not.toBeChecked();
+ page.once('dialog',d=>d.accept());await page.getByLabel('신청 준비 닫기').click();await page.getByRole('button',{name:/내 계정/}).click();await page.getByRole('button',{name:'로그아웃',exact:true}).click();await page.getByLabel('내 계정 닫기').click();await openImport(page,0);await expect(page.getByRole('region',{name:'가져오기 미리보기'})).toHaveCount(0);
+});
+
+test('import recovery discards foreign drafts without applying them',async({page})=>{
+ await page.addInitScript(()=>sessionStorage.setItem('benefit-import-preview:v1',JSON.stringify({version:1,owner:'another-account',savedAt:Date.now(),draft:{source:'다른 계정 개인 메모'}})));
+ await page.goto('/');await openImport(page,0);await expect(page.getByRole('region',{name:'가져오기 미리보기'})).toHaveCount(0);await expect(page.getByText('다른 계정 개인 메모',{exact:true})).toHaveCount(0);expect(await page.evaluate(()=>sessionStorage.getItem('benefit-import-preview:v1'))).toBeNull();
+ await page.getByLabel('JSON 기록 파일',{exact:true}).setInputFiles(importFile(importData));await page.getByRole('checkbox',{name:'새로고침 후에도 미리보기 이어가기',exact:true}).check();await page.getByRole('checkbox',{name:'새로고침 후에도 미리보기 이어가기',exact:true}).uncheck();expect(await page.evaluate(()=>sessionStorage.getItem('benefit-import-preview:v1'))).toBeNull();
+});
+
+test('member import recovery waits for identity and removes the stored draft on logout',async({page})=>{
+ await member(page);await page.goto('/');await expect(page.getByRole('button',{name:/내 계정/})).toBeVisible();await openImport(page,0);await page.getByLabel('JSON 기록 파일',{exact:true}).setInputFiles(importFile(importData));await page.getByRole('checkbox',{name:'새로고침 후에도 미리보기 이어가기',exact:true}).check();
+ page.once('dialog',d=>d.accept());await page.reload();await expect(page.getByRole('button',{name:/내 계정/})).toBeVisible();await page.getByRole('button',{name:'신청 준비 0',exact:true}).click();await expect(page.getByRole('region',{name:'가져오기 미리보기'})).toBeVisible();
+ page.once('dialog',d=>d.accept());await page.getByLabel('신청 준비 닫기').click();await page.getByRole('button',{name:/내 계정/}).click();await page.getByRole('button',{name:'로그아웃',exact:true}).click();await expect.poll(()=>page.evaluate(()=>sessionStorage.getItem('benefit-import-preview:v1'))).toBeNull();await page.getByLabel('내 계정 닫기').click();await openImport(page,0);await expect(page.getByRole('region',{name:'가져오기 미리보기'})).toHaveCount(0);
 });

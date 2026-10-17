@@ -1,3 +1,4 @@
+import type { DraftRecovery } from "./useImportDraft";
 import { PlanningImportPanel, type ImportDraft } from "./PlanningImportPanel";
 import { exportPlanning, matchesPlanningSearch } from "./planningExport";
 import { ApplicationRecordEditor } from "./ApplicationRecordEditor";
@@ -8,8 +9,8 @@ import { checklistSteps, trackedIds, applicationStatuses } from "./planning";
 import { deadlineDays, deadlineLabel, matchesDeadline, seoulToday, type DeadlineFilter } from "./deadline";
 import { DeadlineCalendarButton } from "./DeadlineCalendarButton";
 
-export function PreparationDialog({ planning, onClose, onDetail, importDraft, onImportDraftChange }: {
-  importDraft: ImportDraft | null; onImportDraftChange: (draft: ImportDraft | null) => void;
+export function PreparationDialog({ planning, onClose, onDetail, importDraft, importRecovery, onImportDraftChange }: {
+  importRecovery: DraftRecovery; importDraft: ImportDraft | null; onImportDraftChange: (draft: ImportDraft | null) => void;
   planning: PlanningState; onClose: () => void; onDetail: (id: string) => void;
 }) {
   const [availability, setAvailability] = useState("all");
@@ -70,7 +71,7 @@ export function PreparationDialog({ planning, onClose, onDetail, importDraft, on
       <p className="planning-help">검색 조건과 관계없이 저장된 전체 기록을 내려받아요. JSON에는 비교 목록도 포함돼요. 파일에는 개인 메모가 포함돼요. JSON 파일은 아래 가져오기에서 다시 합칠 수 있어요. 확인하지 못한 공고는 CSV 제목·마감일이 비어 있을 수 있어요.</p>
       {exportMessage && <p role="status">{exportMessage}</p>}
     </section>
-    <PlanningImportPanel planning={planning} items={items} draft={importDraft} onDraftChange={onImportDraftChange} onPendingChange={setImportPending} />
+    <PlanningImportPanel planning={planning} items={items} draft={importDraft} recovery={importRecovery} onDraftChange={onImportDraftChange} onPendingChange={setImportPending} />
     {importPending && <p role="status">가져오기 작업이 끝나면 창을 닫을 수 있어요.</p>}
     <label className="preparation-search">신청 기록 검색<input type="search" value={query} maxLength={200} placeholder="공고 제목, 기관, 번호, 내 메모" onChange={event => setQuery(event.target.value)} /></label>
     <div className="preparation-sync">

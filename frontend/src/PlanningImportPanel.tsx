@@ -2,11 +2,13 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { PlanningState } from './PlanningPanel';
 import type { Benefit } from './benefit';
 import { applicationStatuses, trackedIds, type Planning } from './planning';
-import { importConflicts, importCounts, MAX_IMPORT_BYTES, parseImport, planningFingerprint, resolveImport, type ImportChoices } from './planningImport';
+import { importConflicts, importCounts, MAX_IMPORT_BYTES, parseImport, planningFingerprint, resolveImport } from './planningImport';
 
-export type ImportDraft = { incoming: Planning; baseline: Planning; choices: ImportChoices; includeCompare: boolean; source: string };
-export function PlanningImportPanel({ planning, items, draft, onDraftChange, onPendingChange }: {
-  planning: PlanningState; items: Benefit[]; draft: ImportDraft | null;
+import type { ImportDraft } from './importDraft';
+import type { DraftRecovery } from './useImportDraft';
+export type { ImportDraft } from './importDraft';
+export function PlanningImportPanel({ planning, items, draft, recovery, onDraftChange, onPendingChange }: {
+  planning: PlanningState; items: Benefit[]; draft: ImportDraft | null; recovery: DraftRecovery;
   onDraftChange: (draft: ImportDraft | null) => void; onPendingChange: (pending: boolean) => void;
 }) {
   const incoming = draft?.incoming || null;
@@ -49,13 +51,16 @@ export function PlanningImportPanel({ planning, items, draft, onDraftChange, onP
   return <details className="planning-import" open={draft ? true : undefined}>
     <summary>파일·기기 기록 가져오기</summary>
     <p className="planning-help">혜택온 JSON 파일(1MB 이하)을 선택한 뒤 미리보기를 확인해 주세요. 기존 기록은 유지하고 체크리스트는 합쳐요. 상태·메모가 다르면 공고별로 선택하며, CSV는 가져올 수 없어요.</p>
-    <p className="planning-help">미리보기 선택은 이 탭에서 창을 닫았다 열어도 유지돼요. 새로고침·탭 종료·계정 변경 시에는 사라져요. 실제 기록은 가져오기를 눌러야 저장돼요.</p>
+    <p className="planning-help">미리보기 선택은 이 탭에서 창을 닫았다 열어도 유지돼요. 새로고침 후에도 이어가려면 아래 임시 보관을 선택하세요. 계정이 바뀌면 미리보기를 지워요. 실제 기록은 가져오기를 눌러야 저장돼요.</p>
     <label>JSON 기록 파일<input type="file" accept=".json,application/json" disabled={locked} onChange={event => { void readFile(event.target.files?.[0]); event.target.value = ''; }} /></label>
     {planning.account && <div className="preparation-actions">{['비회원', '이전 계정'].map((label, index) => <button key={label} className="secondary-button" disabled={locked} onClick={() => {
       if (draft && !window.confirm('현재 미리보기와 선택을 기기 기록으로 바꿀까요?')) return;
       try { const entry = planning.localSources()[index]; sequence.current++; preview(entry.data, entry.label); }
       catch { setMessage('이 브라우저의 기록을 읽지 못했어요. 저장 공간 접근을 확인해 주세요.'); }
     }}>{label} 기기 기록 미리보기</button>)}</div>}
+    {draft&&<label className="check"><input type="checkbox" checked={recovery.remember} disabled={locked||!recovery.ready} onChange={event=>recovery.setRemember(event.target.checked)} />새로고침 후에도 미리보기 이어가기</label>}
+    {draft&&<p className="planning-help">선택하면 파일 내용과 개인 메모가 현재 탭의 임시 저장 공간에 보관돼요. 마지막 저장부터 최대 24시간이며, 브라우저의 탭 복구·복제 기능으로 남을 수 있어요. 공용 기기에서는 사용하지 마세요. 선택 해제·가져오기 완료·취소 시 보관본을 지워요.</p>}
+    {recovery.notice&&<p role="status">{recovery.notice}</p>}
     {reading && <p role="status">파일을 확인하고 있어요…</p>}
     {message && <p role="status">{message}</p>}
     {incoming && counts && <section aria-label="가져오기 미리보기">
