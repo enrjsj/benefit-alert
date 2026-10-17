@@ -1,6 +1,6 @@
 import { PreferenceDistrict } from "./PreferenceDistrict";
 import { createGuestSavedStore, savedKey } from "./guestSaved";
-import { fetchJsonResponse } from "./request";
+import { fetchJsonResponse, fetchStartupJson } from "./request";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { type SupabaseClient, type Session } from "@supabase/supabase-js";
 const base = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
@@ -73,6 +73,11 @@ export function useAccount() {
     [busy, setBusy] = useState(false),
     [ready, setReady] = useState(false),
     [recovery, setRecovery] = useState(false);
+  const [authNotice, setAuthNotice] = useState("");
+  const [profileReady, setProfileReady] = useState(false);
+  const [profileBusy, setProfileBusy] = useState(false);
+  const [profileError, setProfileError] = useState("");
+  const savedPending = useRef(false), profilePending = useRef(false);
   const [alertsError, setAlertsError] = useState("");
   const [alertsBusy, setAlertsBusy] = useState(false);
   const alertsRequest = useRef(0);
@@ -100,9 +105,14 @@ export function useAccount() {
       auth: SupabaseClient | undefined;
     const abort = new AbortController();
     setState("loading");
+    const fragment = new URLSearchParams(location.hash.slice(1));
+    if (fragment.has("error") || fragment.has("error_code")) {
+      setAuthNotice("인증 링크가 만료되었거나 유효하지 않아요. 로그인하거나 비밀번호 찾기에서 새 링크를 요청해 주세요.");
+      history.replaceState(null, "", location.pathname + location.search);
+    }
     (async () => {
       try {
-        const r = await fetchJsonResponse(`${base}/api/client-config`, {
+        const r = await fetchStartupJson(`${base}/api/client-config`, {
           signal: abort.signal,
         });
         if (!r.ok) throw Error();
@@ -183,19 +193,34 @@ export function useAccount() {
       if (epoch === sessionEpoch.current && sequence === alertsRequest.current) setAlertsBusy(false);
     }
   }
-  async function refresh() {
+  async function refreshProfile() {
+    if (!current.current || profilePending.current) return;
     const epoch = sessionEpoch.current;
-    setError(""); setBusy(true);
-    void refreshAlerts();
+    profilePending.current = true; setProfileBusy(true); setProfileError("");
     try {
-      const [p, s] = await Promise.all([request<Preferences>("/profile"), request<string[]>("/saved")]);
-      if (sessionEpoch.current !== epoch) return;
-      setProfile(p); setRemote(s); setReady(true);
+      const result = await request<Preferences>("/profile");
+      if (epoch === sessionEpoch.current) { setProfile(result); setProfileReady(true); }
     } catch (e) {
-      if (sessionEpoch.current === epoch) setError((e as Error).message);
+      if (epoch === sessionEpoch.current) setProfileError((e as Error).message);
     } finally {
-      if (sessionEpoch.current === epoch) setBusy(false);
+      if (epoch === sessionEpoch.current) { profilePending.current = false; setProfileBusy(false); }
     }
+  }
+  async function refreshSaved() {
+    if (!current.current || savedPending.current) return;
+    const epoch = sessionEpoch.current;
+    savedPending.current = true; setBusy(true); setError("");
+    try {
+      const result = await request<string[]>("/saved");
+      if (epoch === sessionEpoch.current) { setRemote(result); setReady(true); }
+    } catch (e) {
+      if (epoch === sessionEpoch.current) setError((e as Error).message);
+    } finally {
+      if (epoch === sessionEpoch.current) { savedPending.current = false; setBusy(false); }
+    }
+  }
+  function refresh() {
+    void refreshProfile(); void refreshSaved(); void refreshAlerts();
   }
   useEffect(() => {
     setRemote([]);
@@ -203,6 +228,8 @@ export function useAccount() {
     setAlertsError(""); setAlertsBusy(false);
     setReady(false);
     setBusy(false);
+    savedPending.current = false; profilePending.current = false;
+    setProfileReady(false); setProfileBusy(false); setProfileError("");
     setError("");
     setProfile({
       region: "전체",
@@ -213,7 +240,7 @@ export function useAccount() {
   }, [session?.user.id, session?.access_token]);
   async function toggle(id: string, removeOnly = false) {
     const epoch = sessionEpoch.current;
-    if (busy) return;
+    if (savedPending.current) return;
     if (!session) {
       setError("");
       guestStore.toggle(id, removeOnly);
@@ -223,7 +250,7 @@ export function useAccount() {
       setError("관심목록을 먼저 새로고침해 주세요.");
       return;
     }
-    setBusy(true);
+    savedPending.current = true; setBusy(true);
     setError("");
     try {
       const result = await request<string[]>(
@@ -235,13 +262,14 @@ export function useAccount() {
     } catch (e) {
       if (sessionEpoch.current === epoch) setError((e as Error).message);
     } finally {
-      if (sessionEpoch.current === epoch) setBusy(false);
+      if (sessionEpoch.current === epoch) { savedPending.current = false; setBusy(false); }
     }
   }
   async function saveProfile(p: Preferences) {
+    if (!profileReady || profilePending.current) return false;
     const epoch = sessionEpoch.current;
-    setBusy(true);
-    setError("");
+    profilePending.current = true; setProfileBusy(true);
+    setProfileError("");
     try {
       const profile = await request<Preferences>("/profile", "PUT", p);
       if (sessionEpoch.current !== epoch) return false;
@@ -251,15 +279,16 @@ export function useAccount() {
       void refreshAlerts();
       return true;
     } catch (e) {
-      if (sessionEpoch.current === epoch) setError((e as Error).message);
+      if (sessionEpoch.current === epoch) setProfileError((e as Error).message);
       return false;
     } finally {
-      if (sessionEpoch.current === epoch) setBusy(false);
+      if (sessionEpoch.current === epoch) { profilePending.current = false; setProfileBusy(false); }
     }
   }
   async function importGuest() {
+    if (!ready || savedPending.current) return;
     const epoch = sessionEpoch.current;
-    setBusy(true);
+    savedPending.current = true; setBusy(true);
     setError("");
     try {
       const result = await request<string[]>("/saved", "POST", { ids: guest });
@@ -267,7 +296,7 @@ export function useAccount() {
     } catch (e) {
       if (sessionEpoch.current === epoch) setError((e as Error).message);
     } finally {
-      if (sessionEpoch.current === epoch) setBusy(false);
+      if (sessionEpoch.current === epoch) { savedPending.current = false; setBusy(false); }
     }
   }
   async function readAlert(a: Alert) {
@@ -279,11 +308,12 @@ export function useAccount() {
         items.map((x) => (x.id === a.id ? { ...x, read: true } : x)),
       );
     } catch (e) {
-      if (sessionEpoch.current === epoch) setError((e as Error).message);
+      if (sessionEpoch.current === epoch) setAlertsError((e as Error).message);
     }
   }
   return {
     client,
+    authNotice,
     session,
     state,
     saved,
@@ -293,6 +323,7 @@ export function useAccount() {
     alertsError,
     alertsBusy,
     refreshAlerts,
+    profileReady, profileBusy, profileError, refreshProfile, refreshSaved,
     error,
     busy,
     ready,
@@ -332,7 +363,7 @@ export function AccountPanel({
   const dirty = !samePreferences(prefs, baseline);
   const mayLeave = () => !dirty || window.confirm("저장하지 않은 관심 조건을 버릴까요?");
   const close = () => { if (mayLeave()) onClose(); };
-  useEffect(() => { if (a.ready && (!dirty || samePreferences(a.profile, prefs))) { setPrefs(a.profile); setBaseline(a.profile); } }, [a.profile, a.ready, dirty, prefs]);
+  useEffect(() => { if (a.profileReady && (!dirty || samePreferences(a.profile, prefs))) { setPrefs(a.profile); setBaseline(a.profile); } }, [a.profile, a.profileReady, dirty, prefs]);
   useEffect(() => {
     if (!dirty) return;
     const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
@@ -424,6 +455,7 @@ export function AccountPanel({
                 <button
                   type="button"
                   key={m}
+                  disabled={pending}
                   aria-pressed={mode === m}
                   onClick={() => {
                     setMode(m);
@@ -485,6 +517,7 @@ export function AccountPanel({
           </p>
         </form>
       )}
+      {a.authNotice && <p role="alert">{a.authNotice}</p>}
       {message && (
         <p role="status" className="account-note">
           {message}
@@ -515,10 +548,19 @@ export function AccountPanel({
               로그아웃
             </button>
           </div>
-          <button className="text-button" disabled={a.busy} onClick={a.refresh}>
-            {a.busy ? "불러오는 중…" : "계정 정보 새로고침"}
+          <button className="text-button" disabled={a.busy && a.profileBusy && a.alertsBusy} onClick={a.refresh}>
+            계정 정보 새로고침
           </button>
-          {a.ready && (
+          <section aria-label="관심 조건 불러오기">
+            {a.profileBusy && <p role="status">관심 조건을 불러오거나 저장하고 있어요…</p>}
+            {a.profileError && <p role="alert">관심 조건: {a.profileError}</p>}
+            <button className="text-button" disabled={a.profileBusy} onClick={a.refreshProfile}>관심 조건 새로고침</button>
+          </section>
+          <section aria-label="관심목록 불러오기">
+            {a.busy && <p role="status">관심목록을 불러오거나 저장하고 있어요…</p>}
+            <button className="text-button" disabled={a.busy} onClick={a.refreshSaved}>관심목록 새로고침</button>
+          </section>
+          {a.profileReady && (
             <>
               <form
                 className="account-form"
@@ -529,7 +571,7 @@ export function AccountPanel({
                 }}
               >
                 <h3>나의 관심 조건</h3>
-                <fieldset disabled={a.busy || pending}>
+                <fieldset disabled={a.profileBusy || pending}>
                 <legend className="sr-only">나의 관심 조건 입력</legend>
                 <div className="account-selects">
                   <label>
@@ -580,7 +622,7 @@ export function AccountPanel({
                   이내 마감을 확인해요. 이메일·푸시 알림은 발송하지 않아요.
                 </p>
                 <div className="dialog-actions">
-                  <button className="primary-button" disabled={a.busy}>
+                  <button className="primary-button" disabled={a.profileBusy}>
                     조건 저장
                   </button>
                   <button
@@ -597,9 +639,11 @@ export function AccountPanel({
                 </div>
                 </fieldset>
                 {dirty && <p role="status">아직 저장하지 않은 관심 조건이 있어요. 새로고침해도 작성 중인 내용은 유지돼요.</p>}
-                {dirty && <button type="button" className="text-button" disabled={a.busy || pending} onClick={() => { if (mayLeave()) { setPrefs(a.profile); setBaseline(a.profile); } }}>저장된 조건 불러오기</button>}
+                {dirty && <button type="button" className="text-button" disabled={a.profileBusy || pending} onClick={() => { if (mayLeave()) { setPrefs(a.profile); setBaseline(a.profile); } }}>저장된 조건 불러오기</button>}
               </form>
-              {a.guest.length > 0 && (
+            </>
+          )}
+              {a.ready && a.guest.length > 0 && (
                 <div className="account-note">
                   <p>
                     이 브라우저에 저장한 관심 혜택 {a.guest.length}개를 계정에도
@@ -622,7 +666,7 @@ export function AccountPanel({
                 {a.alertsError && <p role="alert">{a.alertsError}</p>}
                 {a.alerts.length === 0 ? (
                   <p>
-                    {a.alertsError ? "알림 새로고침으로 다시 확인해 주세요." : a.alertsBusy ? "알림을 확인하고 있어요…" : a.profile.notificationsEnabled
+                    {a.alertsError ? "알림 새로고침으로 다시 확인해 주세요." : a.alertsBusy ? "알림을 확인하고 있어요…" : !a.profileReady ? "관심 조건을 불러오면 알림 설정을 확인할 수 있어요." : a.profile.notificationsEnabled
                       ? "아직 새로운 알림이 없어요."
                       : "사이트 내 알림을 켜면 여기에서 확인할 수 있어요."}
                   </p>
@@ -649,8 +693,6 @@ export function AccountPanel({
                   </ul>
                 )}
               </section>
-            </>
-          )}
         </>
       )}
     </dialog>

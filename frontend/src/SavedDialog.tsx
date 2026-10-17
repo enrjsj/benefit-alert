@@ -28,11 +28,13 @@ export function SavedDialog({ account, onClose }: { account: Account; onClose: (
     <label className="preparation-search">관심목록 검색<input type="search" maxLength={200} value={query} onChange={event => setQuery(event.target.value)} placeholder="공고 제목, 기관, 번호" /></label>
     <label>관심목록 공고 조건<select aria-label="관심목록 공고 조건" value={filter} onChange={event => setFilter(event.target.value)}><option value="all">전체</option><option value="week">7일 이내 마감</option><option value="expired">마감된 공고</option><option value="missing">조회 중단 공고</option><option value="unknown">확인 대기 공고</option></select></label>
     {account.error && <p role="alert">{account.error}</p>}
+    {account.session && <button disabled={account.busy} onClick={account.refreshSaved}>계정 관심목록 새로고침</button>}
+    {account.session && !account.ready && <p role="status">계정 관심목록을 아직 확인하지 못했어요. 새로고침으로 다시 확인해 주세요.</p>}
     {loading && <p role="status">저장한 공고를 확인하고 있어요…</p>}
     {error && <div role="alert"><p>공고를 확인하지 못했어요. 관심목록은 유지돼요. 확인 대기는 제공 중단을 의미하지 않아요.</p><button disabled={loading} onClick={reload}>다시 불러오기</button></div>}
     <>
       <p>전체 {account.saved.length}개 · 조회 중단 {account.saved.filter(id => checked.has(id) && !byId.has(id)).length}개 · 확인 대기 {account.saved.filter(id => !checked.has(id)).length}개</p>
-      {!account.saved.length && <p>저장한 관심 공고가 없어요.</p>}
+      {(!account.session || account.ready) && !account.saved.length && <p>저장한 관심 공고가 없어요.</p>}
       {account.saved.length > 0 && <p role="status">조건에 맞는 관심 공고 {shown.length}개</p>}
       {account.saved.length > 0 && !shown.length && <button className="secondary-button" onClick={() => { setQuery(""); setFilter("all"); }}>관심목록 조건 초기화</button>}
       <ul className="preparation-list">{shown.map(id => <li key={id}>

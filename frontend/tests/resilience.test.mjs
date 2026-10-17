@@ -38,3 +38,17 @@ test('explicit removal remains a removal when another tab already removed the it
  second.toggle('a',true);first.toggle('a',true);
  assert.deepEqual(first.getSnapshot().ids,['b']);
 });
+
+test('startup reads recover from timeouts, stop after four attempts and do not replay writes or private requests',async()=>{
+ const {fetchStartupJson}=await import('../src/request.ts');
+ let calls=0;const waits=[];
+ const r=await fetchStartupJson('/public',{},n=>waits.push(n),async()=>++calls<3?new Promise(()=>{}):new Response('{}'),5);
+ assert.equal(r.status,200);assert.equal(calls,3);assert.deepEqual(waits,[2,3]);
+ calls=0;await assert.rejects(fetchStartupJson('/public',{},()=>{},async()=>{calls++;return new Promise(()=>{});},5));assert.equal(calls,4);
+ for(const init of [{method:'POST'},{headers:{Authorization:'Bearer fixture'}}]) {
+  calls=0;await assert.rejects(fetchStartupJson('/private',init,()=>{},async()=>{calls++;return new Promise(()=>{});},5));assert.equal(calls,1);
+ }
+ const abort=new AbortController();calls=0;
+ await assert.rejects(fetchStartupJson('/public',{signal:abort.signal},()=>abort.abort(),async()=>{calls++;return new Promise(()=>{});},5),{name:'AbortError'});assert.equal(calls,1);
+ calls=0;assert.equal((await fetchStartupJson('/public',{},()=>{},async()=>{calls++;return new Response('{}',{status:503});},5)).status,503);assert.equal(calls,1);
+});

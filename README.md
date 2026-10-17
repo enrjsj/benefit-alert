@@ -191,3 +191,10 @@ Flyway V5는 기존 정부24 공고에서 누락된 마감일만 채웁니다. �
 `/api/data-report`의 `regions`는 17개 시도별 `total`/`districtKnown`, `periods`는 `dated`/`ongoing`/`guidance` 건수입니다. 활성 공고를 한 번에 집계하며 `regions.total` 합은 `coverage.regionKnown`, 기간 합은 `coverage.total`과 같습니다. 현황의 건수를 선택하면 기존 검색 조건과 관심목록 보기를 초기화하고 해당 전체 목록으로 이동합니다. 집계와 검색 사이에 수집이 진행되면 건수는 달라질 수 있습니다.
 
 `/api/data-status`의 `consecutiveFailures`는 최근 성공 이후 FAILED/PARTIAL 횟수입니다. `attentionReason`은 DISABLED/STALLED/CREDENTIAL_REJECTED/REPEATED_FAILURE/WAITING/STALE/NONE 중 하나이며, 연속 3회부터 반복 실패로 표시합니다. 진행 중 재시도는 실패 횟수를 초기화하지 않고 성공 시 0으로 복원합니다. `scripts/check_collection.py`는 기존 GitHub 정기 점검에서 진단 결과와 시간 초과 이유를 실행 요약에 남기며 외부 메시지를 발송하지 않습니다.
+
+### 운영 지연·실제 인증 검증
+
+- `python scripts/measure_latency.py --samples 2`: Render 직접/Vercel 경유 health·목록 지연, 요청 ID 및 앱 처리 시간 비교. 첫 표본이 실제 유휴 상태였는지는 Render 시작 로그로 확인합니다. 무료 서비스 기동 대기는 서버의 `Server-Timing`에 포함되지 않습니다.
+- 공개 목록/회원 설정 조회는 읽기 시간 초과에 한해 최대 4회(총 약 80초) 자동 재시도합니다. 로그인된 요청과 쓰기 요청은 재전송하지 않습니다. 무료 서비스의 유휴 기동 자체는 유지됩니다.
+- 프로필·관심목록·알림은 독립적으로 새로고침할 수 있습니다. 한 영역이 실패해도 다른 영역을 사용할 수 있습니다.
+- 실제 메일 수신과 두 인증 세션 검증 설정/제약: [AUTH_TESTING.md](AUTH_TESTING.md). 전용 계정 없는 실행은 성공으로 처리하지 않습니다.

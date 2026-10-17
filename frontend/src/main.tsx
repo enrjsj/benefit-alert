@@ -2,7 +2,7 @@ import { periodLabels, periodType as classifyPeriod, type PeriodFilter } from ".
 import { DataReportDialog } from "./DataReportDialog";
 import { dataTime } from "./dataReport";
 import { readSearchState, searchRegions } from "./searchState";
-import { fetchJsonResponse } from "./request";
+import { fetchJsonResponse, fetchStartupJson } from "./request";
 import { deadlineLabel } from "./deadline";
 import { DeadlineCalendarButton } from "./DeadlineCalendarButton";
 import { ApplicationRecordEditor } from "./ApplicationRecordEditor";
@@ -176,6 +176,7 @@ function App() {
   const [items, setItems] = useState<Benefit[]>([]);
   const [demo, setDemo] = useState(false),
     [loading, setLoading] = useState(true),
+    [startupWait, setStartupWait] = useState(false),
     [error, setError] = useState(false);
   const [q, rawQ] = useState(() => initialParams().q),
     [region, rawRegion] = useState(
@@ -238,8 +239,8 @@ function App() {
     setPage(1);
   };
   useEffect(() => {
-    if (account.recovery) setAccountOpen(true);
-  }, [account.recovery]);
+    if (account.recovery || account.authNotice) setAccountOpen(true);
+  }, [account.recovery, account.authNotice]);
   useEffect(() => {
     if (account.error) setNotice(account.error);
   }, [account.error]);
@@ -379,6 +380,7 @@ function App() {
   useEffect(() => {
     const abort = new AbortController();
     setLoading(true);
+    setStartupWait(false);
     setError(false);
     const timer = setTimeout(async () => {
       try {
@@ -401,7 +403,7 @@ function App() {
               saved.length ? saved.join(",") : "__empty_guest_list__",
             );
         }
-        const response = await fetchJsonResponse(`${apiBase}/api/benefits?${params}`, {
+        const response = await (savedOnly ? fetchJsonResponse : (url: string, init: RequestInit) => fetchStartupJson(url, init, () => setStartupWait(true)))(`${apiBase}/api/benefits?${params}`, {
           headers: account.session
             ? { Authorization: `Bearer ${account.session.access_token}` }
             : {},
@@ -796,6 +798,7 @@ function App() {
                   ? "혜택 조회에 실패했습니다."
                   : `${total}개의 혜택이 있습니다.`}
             </p>
+            {loading && startupWait && <p role="status">서버 응답이 늦어 자동으로 다시 확인하고 있어요. 처음 연결할 때 최대 80초 정도 걸릴 수 있어요. 검색 조건은 유지돼요.</p>}
             {loading ? (
               <div className="benefit-grid" aria-label="혜택 불러오는 중">
                 {[1, 2, 3, 4].map((n) => (

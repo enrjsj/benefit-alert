@@ -117,7 +117,7 @@ test('a stalled request becomes retryable while retaining the selected district'
   await page.goto('/?region=서울&district=강남구');
   await page.clock.runFor(300);
   await expect(page.getByText('혜택을 불러오는 중입니다.')).toBeVisible();
-  await page.clock.fastForward(20001);
+  for(let attempt=0;attempt<4;attempt++) { await page.clock.fastForward(20001); await page.clock.runFor(10); }
   await expect(page.getByRole('button',{name:'다시 불러오기',exact:true})).toBeVisible();
   stalled=false;await page.getByRole('button',{name:'다시 불러오기',exact:true}).click();await page.clock.runFor(300);
   await expect(cards(page)).toHaveCount(1);
@@ -659,4 +659,61 @@ test('removing an unconfirmed favorite preserves its application record', async 
  await expect(dialog.getByRole('alert')).toBeVisible();page.once('dialog',d=>d.dismiss());await dialog.getByRole('button',{name:'관심 해제'}).click();await expect(dialog.locator('li')).toHaveCount(1);
  page.once('dialog',d=>d.accept());await dialog.getByRole('button',{name:'관심 해제'}).click();await expect(dialog).toContainText('저장한 관심 공고가 없어요');
  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('benefit-planning:v2:guest')!).applications.a.note)).toBe('지우지 않을 메모');
+});
+
+
+test('profile failure does not block favorite writes and profile retry is isolated',async({page})=>{
+ await member(page);let fail=true,profileCalls=0,savedCalls=0;
+ await page.route('**/api/account/profile',r=>{profileCalls++;return r.fulfill(fail?{status:503,json:{}}:{json:{region:'서울',category:'주거',notificationsEnabled:false}});});
+ await page.route('**/api/account/saved',r=>{savedCalls++;return r.fulfill({json:r.request().method()==='POST'?['a']:[]});});
+ await page.goto('/');await page.getByRole('button',{name:'강남 주거 지원 관심목록 저장',exact:true}).click();await expect(page.getByRole('button',{name:'강남 주거 지원 관심목록 해제',exact:true})).toBeVisible();
+ await page.getByRole('button',{name:/내 계정/}).click();await expect(page.getByRole('button',{name:'조건 저장',exact:true})).toHaveCount(0);
+ const before=savedCalls;fail=false;await page.getByRole('button',{name:'관심 조건 새로고침',exact:true}).click();await expect(page.getByLabel('관심 지역',{exact:true})).toHaveValue('서울');expect(savedCalls).toBe(before);expect(profileCalls).toBe(2);
+});
+
+test('saved lookup failure leaves profile and notifications usable and retries only saved data',async({page})=>{
+ await member(page);let fail=true,profileCalls=0;
+ await page.route('**/api/account/saved',r=>r.fulfill(fail?{status:503,json:{}}:{json:['a']}));
+ await page.route('**/api/account/profile',r=>{profileCalls++;return r.fulfill({json:r.request().method()==='PUT'?r.request().postDataJSON():{region:'서울',category:'주거',notificationsEnabled:false}});});
+ await page.goto('/');await page.getByRole('button',{name:/내 계정/}).click();await page.getByLabel('관심 분야',{exact:true}).selectOption('교육');await page.getByRole('button',{name:'조건 저장',exact:true}).click();await expect(page.getByText('맞춤 조건을 저장했어요.')).toBeVisible();await expect(page.getByLabel('내 알림',{exact:true})).toBeVisible();
+ const before=profileCalls;fail=false;await page.getByRole('button',{name:'관심목록 새로고침',exact:true}).click();await page.getByLabel('내 계정 닫기',{exact:true}).click();await expect(page.getByRole('button',{name:'강남 주거 지원 관심목록 해제',exact:true})).toBeVisible();expect(profileCalls).toBe(before);
+});
+
+test('pending saved lookup cannot freeze profile editing and late response after logout stays hidden',async({page})=>{
+ await member(page);let release!:()=>void;const gate=new Promise<void>(r=>{release=r;});
+ await page.route('**/api/account/saved',async r=>{await gate;await r.fulfill({json:['a']});});
+ await page.goto('/');await page.getByRole('button',{name:/내 계정/}).click();await expect(page.getByRole('button',{name:'조건 저장',exact:true})).toBeEnabled();await page.getByRole('button',{name:'로그아웃',exact:true}).click();release();await expect(page.getByRole('heading',{name:'로그인하고 이어서 모아보세요'})).toBeVisible();await page.getByLabel('내 계정 닫기',{exact:true}).click();await expect(page.getByRole('button',{name:'강남 주거 지원 관심목록 저장',exact:true})).toBeVisible();
+});
+
+test('public startup timeout automatically recovers without losing district selection',async({page})=>{
+ await page.clock.install();let attempts=0;
+ await page.route('**/api/benefits?**',async r=>{if(++attempts===1)return;return r.fallback();});
+ await page.goto('/?region=서울&district=강남구');await page.clock.runFor(300);await page.clock.fastForward(20001);await page.clock.runFor(50);await expect(cards(page)).toHaveCount(1);await expect(page.getByLabel('시·군·구',{exact:true})).toHaveValue('강남구');expect(attempts).toBe(2);
+});
+
+async function authConfig(page:Page) {
+ await page.route('**/api/client-config',r=>r.fulfill({json:{authEnabled:true,supabaseUrl:'https://benefit-test.supabase.co',publishableKey:'sb_publishable_fixture_only'}}));
+}
+test('signup and password reset send correct redirects and give non-enumerating feedback',async({page})=>{
+ await authConfig(page);const calls:{path:string,body:any}[]=[];
+ await page.route('https://benefit-test.supabase.co/**',r=>{calls.push({path:r.request().url(),body:r.request().postDataJSON()});return r.fulfill({json:r.request().url().includes('/signup')?{user,session:null}:{}});});
+ await page.goto('/');await page.getByRole('button',{name:'로그인',exact:true}).click();await page.getByRole('button',{name:'회원가입',exact:true}).click();await page.getByLabel('이메일',{exact:true}).fill('fixture@example.test');await page.getByLabel('비밀번호',{exact:true}).fill('fixture-password-123');await page.getByRole('button',{name:'인증 메일 받기',exact:true}).click();await expect(page.getByText('인증 메일을 확인해 주세요.',{exact:false})).toBeVisible();
+ await page.getByRole('button',{name:'비밀번호 찾기',exact:true}).click();await page.getByRole('button',{name:'변경 안내 받기',exact:true}).click();await expect(page.getByText('등록된 이메일이면 비밀번호 변경 안내가 발송됩니다.')).toBeVisible();expect(calls.some(c=>c.path.includes('/signup?redirect_to=http'))).toBe(true);expect(calls.some(c=>c.path.includes('/recover?redirect_to=http'))).toBe(true);
+});
+
+test('expired recovery links explain recovery and remove provider error fragments',async({page})=>{
+ await authConfig(page);await page.goto('/#error=access_denied&error_code=otp_expired&error_description=private-provider-text');await expect(page.getByRole('alert')).toContainText('인증 링크가 만료');await expect(page).not.toHaveURL(/error|private-provider/);await page.getByRole('button',{name:'비밀번호 찾기',exact:true}).click();await expect(page.getByRole('button',{name:'변경 안내 받기',exact:true})).toBeVisible();
+});
+
+test('valid recovery session opens password change and saves through the auth SDK',async({page})=>{
+ await authConfig(page);let changed=false;
+ await page.route('https://benefit-test.supabase.co/**',r=>{if(r.request().method()==='PUT'){changed=r.request().postDataJSON().password==='new-fixture-password-123';}return r.fulfill({json:user});});
+ await page.route('**/api/account/**',r=>r.fulfill({json:new URL(r.request().url()).pathname.endsWith('/profile')?{region:'전체',category:'전체',notificationsEnabled:false}:[]}));
+ await page.goto('/#access_token=fixture-recovery-token&refresh_token=fixture-refresh&token_type=bearer&expires_in=3600&type=recovery');await expect(page.getByLabel('새 비밀번호',{exact:true})).toBeVisible();await page.getByLabel('새 비밀번호',{exact:true}).fill('new-fixture-password-123');await page.getByRole('button',{name:'비밀번호 변경',exact:true}).click();await expect(page.getByText('비밀번호를 변경했어요.')).toBeVisible();expect(changed).toBe(true);await expect(page).not.toHaveURL(/access_token/);
+});
+
+test('failed password recovery keeps the draft and allows a successful retry',async({page})=>{
+ await authConfig(page);let fail=true;
+ await page.route('https://benefit-test.supabase.co/**',r=>r.fulfill(fail?{status:400,json:{error:'invalid_request',error_description:'fixture failure'}}:{json:{}}));
+ await page.goto('/');await page.getByRole('button',{name:'로그인',exact:true}).click();await page.getByRole('button',{name:'비밀번호 찾기',exact:true}).click();await page.getByLabel('이메일',{exact:true}).fill('fixture@example.test');await page.getByRole('button',{name:'변경 안내 받기',exact:true}).click();await expect(page.getByText('요청을 완료하지 못했어요.',{exact:false})).toBeVisible();await expect(page.getByLabel('이메일',{exact:true})).toHaveValue('fixture@example.test');fail=false;await page.getByRole('button',{name:'변경 안내 받기',exact:true}).click();await expect(page.getByText('등록된 이메일이면 비밀번호 변경 안내가 발송됩니다.')).toBeVisible();
 });
