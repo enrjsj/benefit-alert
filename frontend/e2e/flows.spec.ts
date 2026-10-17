@@ -496,7 +496,7 @@ test('saved management search combines unavailable and deadline filters and rese
 test('member import previews are discarded on logout and do not leak into guest planning',async({page})=>{
  await member(page);await page.goto('/');await page.getByRole('button',{name:/내 계정/}).click();await expect(page.getByRole('button',{name:'조건 저장',exact:true})).toBeEnabled();await page.getByLabel('내 계정 닫기').click();
  await openImport(page,0);await page.getByLabel('JSON 기록 파일',{exact:true}).setInputFiles(importFile(importData));await expect(page.getByRole('region',{name:'가져오기 미리보기'})).toBeVisible();
- await page.getByLabel('신청 준비 닫기').click();await page.getByRole('button',{name:/내 계정/}).click();await page.getByRole('button',{name:'로그아웃',exact:true}).click();await page.getByLabel('내 계정 닫기').click();
+ page.once('dialog',d=>d.accept());await page.getByLabel('신청 준비 닫기').click();await page.getByRole('button',{name:/내 계정/}).click();await page.getByRole('button',{name:'로그아웃',exact:true}).click();await page.getByLabel('내 계정 닫기').click();
  await openImport(page,0);await expect(page.getByRole('region',{name:'가져오기 미리보기'})).toHaveCount(0);await expect(page.locator('.preparation-dialog')).not.toContainText('파일에서 가져온 메모');
  expect(await page.evaluate(()=>localStorage.getItem('benefit-planning:v2:guest'))).toBeNull();
 });
@@ -716,4 +716,56 @@ test('failed password recovery keeps the draft and allows a successful retry',as
  await authConfig(page);let fail=true;
  await page.route('https://benefit-test.supabase.co/**',r=>r.fulfill(fail?{status:400,json:{error:'invalid_request',error_description:'fixture failure'}}:{json:{}}));
  await page.goto('/');await page.getByRole('button',{name:'로그인',exact:true}).click();await page.getByRole('button',{name:'비밀번호 찾기',exact:true}).click();await page.getByLabel('이메일',{exact:true}).fill('fixture@example.test');await page.getByRole('button',{name:'변경 안내 받기',exact:true}).click();await expect(page.getByText('요청을 완료하지 못했어요.',{exact:false})).toBeVisible();await expect(page.getByLabel('이메일',{exact:true})).toHaveValue('fixture@example.test');fail=false;await page.getByRole('button',{name:'변경 안내 받기',exact:true}).click();await expect(page.getByText('등록된 이메일이면 비밀번호 변경 안내가 발송됩니다.')).toBeVisible();
+});
+
+
+test('import preview retains choices after closing and rejects invalid replacement without losing draft',async({page})=>{
+ await page.goto('/');await openImport(page,0);await page.getByLabel('JSON 기록 파일',{exact:true}).setInputFiles(importFile(importData));
+ await page.getByRole('checkbox',{name:/비교 목록 1개도 합치기/}).uncheck();
+ page.once('dialog',d=>d.dismiss());await page.getByLabel('신청 준비 닫기').click();await expect(page.getByRole('region',{name:'가져오기 미리보기'})).toBeVisible();
+ page.once('dialog',d=>d.accept());await page.getByLabel('신청 준비 닫기').click();await page.getByRole('button',{name:'신청 준비 0',exact:true}).click();
+ await expect(page.getByRole('region',{name:'가져오기 미리보기'})).toBeVisible();await expect(page.getByRole('checkbox',{name:/비교 목록 1개도 합치기/})).not.toBeChecked();
+ page.once('dialog',d=>d.accept());await page.getByLabel('JSON 기록 파일',{exact:true}).setInputFiles({name:'bad.json',mimeType:'application/json',buffer:Buffer.from('{')});
+ await expect(page.locator('.planning-import')).toContainText('올바른 JSON');await expect(page.getByRole('region',{name:'가져오기 미리보기'})).toBeVisible();
+ await page.getByRole('button',{name:'가져오기 취소',exact:true}).click();expect(await page.evaluate(()=>localStorage.getItem('benefit-planning:v2:guest'))).toBeNull();
+});
+
+test('correction submission retains failed drafts and reuses request ID on retry',async({page})=>{
+ await member(page);let attempts:any[]=[];let rows:any[]=[];
+ await page.route('**/api/account/corrections**',r=>{
+  if(r.request().url().endsWith('/access'))return r.fulfill({json:{enabled:true,admin:false}});
+  if(r.request().method()==='POST'){const body=r.request().postDataJSON();attempts.push(body);if(attempts.length===1)return r.fulfill({status:503,json:{}});rows=[{...body,id:1,title:'강남 주거 지원',status:'pending',reply:'',revision:0}];return r.fulfill({json:rows[0]});}
+  return r.fulfill({json:{items:rows,nextCursor:null}});
+ });
+ await page.goto('/?benefit=a');await page.getByRole('button',{name:'공고 정보 정정 요청',exact:true}).click();
+ await page.getByLabel('정정 요청 내용').fill('공식 안내의 마감일과 다릅니다');await page.getByRole('button',{name:'정정 요청 접수',exact:true}).click();
+ await expect(page.getByRole('alert')).toContainText('준비');await expect(page.getByLabel('정정 요청 내용')).toHaveValue('공식 안내의 마감일과 다릅니다');
+ await page.getByRole('button',{name:'정정 요청 접수',exact:true}).click();await expect(page.getByText('요청 #1을 접수했어요.',{exact:false})).toBeVisible();expect(attempts[0].clientId).toBe(attempts[1].clientId);await expect(page.getByLabel('검토 범위')).toHaveCount(0);
+ await page.getByLabel('정정 요청 닫기').click();await expect(page.locator('#detail-title')).toBeVisible();
+});
+
+test('administrator review keeps reply on conflict and refreshes before saving',async({page})=>{
+ await member(page);let conflict=true;let saved:any;const row={id:8,benefitId:'a',title:'강남 주거 지원',category:'deadline',message:'마감일 정정',status:'pending',reply:'',revision:0};
+ await page.route('**/api/account/corrections**',r=>{
+  if(r.request().url().endsWith('/access'))return r.fulfill({json:{enabled:true,admin:true}});
+  if(r.request().method()==='PUT'){saved=r.request().postDataJSON();return r.fulfill(conflict?{status:409,json:{}}:{json:{...row,...saved}});}
+  return r.fulfill({json:{items:[row],nextCursor:null}});
+ });
+ await page.goto('/');await page.getByRole('button',{name:/내 계정/}).click();await page.getByRole('button',{name:'내 정정 요청과 검토',exact:true}).click();await page.getByLabel('검토 범위').selectOption('all');await page.getByRole('button',{name:'요청 #8 검토',exact:true}).click();
+ await page.getByLabel('검토 상태').selectOption('resolved');await page.getByLabel('요청자에게 보낼 답변').fill('공식 자료 확인 후 수정했습니다');await page.getByRole('button',{name:'검토 결과 저장'}).click();await expect(page.getByRole('alert')).toContainText('다른 화면');await expect(page.getByLabel('요청자에게 보낼 답변')).toHaveValue('공식 자료 확인 후 수정했습니다');
+ page.once('dialog',d=>d.accept());await page.getByRole('button',{name:'요청 목록 새로고침'}).click();conflict=false;await page.getByRole('button',{name:'요청 #8 검토',exact:true}).click();await page.getByLabel('검토 상태').selectOption('resolved');await page.getByLabel('요청자에게 보낼 답변').fill('수정 완료');await page.getByRole('button',{name:'검토 결과 저장'}).click();await expect(page.getByText('검토 결과를 저장했어요.')).toBeVisible();expect(saved).toEqual({revision:0,status:'resolved',reply:'수정 완료'});
+});
+
+test('Google login respects provider availability and redirects to the current origin',async({page})=>{
+ await authConfig(page);await page.route('https://benefit-test.supabase.co/auth/v1/settings',r=>r.fulfill({json:{external:{google:false}}}));
+ await page.goto('/');await page.getByRole('button',{name:'로그인',exact:true}).click();await expect(page.getByRole('button',{name:'Google로 로그인',exact:true})).toBeDisabled();
+ await page.route('https://benefit-test.supabase.co/auth/v1/settings',r=>r.fulfill({json:{external:{google:true}}}));let target='';await page.route('https://benefit-test.supabase.co/auth/v1/authorize**',r=>{target=r.request().url();return r.fulfill({contentType:'text/html',body:'OAuth fixture'});});
+ await page.reload();await page.getByRole('button',{name:'로그인',exact:true}).click();await page.getByRole('button',{name:'Google로 로그인',exact:true}).click();await expect.poll(()=>target).toContain('provider=google');expect(new URL(target).searchParams.get('redirect_to')).toBe('http://127.0.0.1:5180/');
+});
+
+test('correction dialog supports keyboard escape, labels and mobile layout',async({page})=>{
+ await page.goto('/?benefit=a');const opener=page.getByRole('button',{name:'공고 정보 정정 요청',exact:true});await opener.click();
+ const dialog=page.getByRole('dialog',{name:'공고 정보 정정 요청',exact:true});await expect(dialog).toBeVisible();await expect(dialog).toContainText('로그인 후');
+ await page.setViewportSize({width:390,height:844});expect(await dialog.evaluate(e=>e.scrollWidth<=e.clientWidth)).toBe(true);
+ await expect(page.getByLabel('정정 요청 닫기')).toBeFocused();await page.keyboard.press('Escape');await expect(dialog).toHaveCount(0);await expect(opener).toBeFocused();
 });

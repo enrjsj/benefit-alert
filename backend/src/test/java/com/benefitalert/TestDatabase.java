@@ -3,6 +3,7 @@ import org.flywaydb.core.Flyway;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.core.simple.JdbcClient;
 public class TestDatabase implements AutoCloseable {
+ public final DriverManagerDataSource dataSource;
  public final JdbcClient jdbc;private final DriverManagerDataSource admin;private final String schema="test_"+java.util.UUID.randomUUID().toString().replace("-","");
  public TestDatabase(){this(null);}
  public TestDatabase(String target){
@@ -10,7 +11,8 @@ public class TestDatabase implements AutoCloseable {
   var config=Flyway.configure().dataSource(admin).schemas(schema).defaultSchema(schema);
   if(target!=null) config.target(target);
   config.load().migrate();
-  jdbc=JdbcClient.create(new DriverManagerDataSource(url+(url.contains("?")?"&":"?")+"currentSchema="+schema,"postgres","benefit-local-test"));
+  dataSource=new DriverManagerDataSource(url+(url.contains("?")?"&":"?")+"currentSchema="+schema,"postgres","benefit-local-test");
+  jdbc=JdbcClient.create(dataSource);
  }
  public void migrate(){Flyway.configure().dataSource(admin).schemas(schema).defaultSchema(schema).load().migrate();}
  public void close(){JdbcClient.create(admin).sql("DROP SCHEMA "+schema+" CASCADE").update();}

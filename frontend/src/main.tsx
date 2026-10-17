@@ -15,6 +15,8 @@ import { createRoot } from "react-dom/client";
 import "./style.css";
 import type { Benefit } from "./benefit";
 import { SavedDialog } from "./SavedDialog";
+import type { ImportDraft } from "./PlanningImportPanel";
+import { CorrectionsDialog } from "./CorrectionsDialog";
 import { PreparationDialog } from "./PreparationDialog";
 import {
   usePlanning,
@@ -155,17 +157,30 @@ const districtCache = createDistrictCache((() => {
 const regions = searchRegions;
 function initialParams() { return readSearchState(location.search); }
 function App() {
+  const [correctionView,setCorrectionView]=useState<{owner:string;benefit?:Benefit}|null>(null);
   const [savedManagerOwner, setSavedManagerOwner] = useState<string | null>(null);
   const account = useAccount();
   const saved = account.saved;
   const planningOwner = account.session?.user.id || "guest";
   const planning = usePlanning(planningOwner, account.session?.access_token);
+  const [importPreview, setImportPreview] = useState<{ owner: string; draft: ImportDraft } | null>(null);
+  const importOwner = useRef(planningOwner);
+  importOwner.current = planningOwner;
+  const importDraft = importPreview?.owner === planningOwner ? importPreview.draft : null;
+  useEffect(() => { setImportPreview(null); }, [planningOwner]);
+  useEffect(() => {
+    if (!importDraft) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    addEventListener("beforeunload", warn);
+    return () => removeEventListener("beforeunload", warn);
+  }, [importDraft]);
   const [recordDirty, setRecordDirty] = useState(false);
   const [preparationOwner, setPreparationOwner] = useState<string | null>(null);
   const [comparisonOwner, setComparisonOwner] = useState<string | null>(null);
   const comparisonOpen = comparisonOwner === planningOwner;
   useEffect(() => {
     setComparisonOwner(null);
+    setCorrectionView(null);
     setPreparationOwner(null);
   }, [planningOwner]);
   useEffect(() => {
@@ -1173,6 +1188,7 @@ function App() {
               <p>혜택온 내용 갱신 · {dataTime(selected.updatedAt)}{selected.updatedAt ? " (한국 시간)" : ""}</p>
               <p className="planning-help">내용 갱신 시각은 혜택온에 저장된 내용이 바뀐 시각이며, 기관의 공고 게시일이나 최근 수집 시각과 다를 수 있어요. 정확한 자격과 신청 기간은 공식 안내에서 확인해 주세요.</p>
             </section>
+            <button className="secondary-button" onClick={()=>setCorrectionView({owner:planningOwner,benefit:selected})}>공고 정보 정정 요청</button>
             <ApplicationRecordEditor key={`${planningOwner}:${selected.id}`} id={selected.id} planning={planning} onDirtyChange={setRecordDirty} />
             <div className="dialog-actions">
               {!demo && <DeadlineCalendarButton key={selected.id} benefit={selected} />}
@@ -1214,7 +1230,8 @@ function App() {
         )}
       </dialog>
       {preparationOwner === planningOwner && (
-        <PreparationDialog key={planningOwner} planning={planning}
+        <PreparationDialog key={planningOwner} planning={planning} importDraft={importDraft}
+          onImportDraftChange={draft => { if (importOwner.current === planningOwner) setImportPreview(draft ? { owner: planningOwner, draft } : null); }}
           onClose={() => setPreparationOwner(null)}
           onDetail={(id) => { setPreparationOwner(null); openDetail(id); }} />
       )}
@@ -1257,9 +1274,11 @@ function App() {
         setDataReportOpen(false);
         requestAnimationFrame(() => { goToResults(); document.getElementById("results")?.focus({ preventScroll: true }); });
       }} />}
+      {correctionView?.owner===planningOwner&&<CorrectionsDialog key={planningOwner} token={account.session?.access_token||null} benefit={correctionView.benefit} onClose={()=>setCorrectionView(null)} />}
       {accountOpen && (
         <AccountPanel key={planningOwner}
           account={account}
+          onCorrections={()=>{setAccountOpen(false);setCorrectionView({owner:planningOwner});}}
           onClose={() => setAccountOpen(false)}
           onOpen={openDetail}
           onApply={(p) => {

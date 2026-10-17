@@ -36,7 +36,9 @@ public class SupabaseIdentity {
  public boolean enabled() { return !key.isBlank(); }
  public String url() { return url; }
  public String publishableKey() { return key; }
- public UUID requireUser(String authorization) {
+ public record Principal(UUID id,String email) {}
+ public UUID requireUser(String authorization) {return requirePrincipal(authorization).id();}
+ public Principal requirePrincipal(String authorization) {
   if(authorization==null || !authorization.startsWith("Bearer ") || authorization.length()<20 || authorization.length()>8192)
    throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "로그인이 필요합니다.");
   if(!enabled()) throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "회원 기능을 준비하고 있습니다.");
@@ -44,7 +46,7 @@ public class SupabaseIdentity {
    JsonNode user=client.get().uri("/user").header("apikey",key).header("Authorization",authorization).retrieve().body(JsonNode.class);
    if(user==null || user.path("email_confirmed_at").isNull() || user.path("email_confirmed_at").isMissingNode())
     throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "이메일 인증이 필요합니다.");
-   return UUID.fromString(user.path("id").asText());
+   return new Principal(UUID.fromString(user.path("id").asText()),user.path("email").asText("").toLowerCase(java.util.Locale.ROOT));
   } catch(RestClientResponseException e) {
    if(e.getStatusCode().value()==401 || e.getStatusCode().value()==403)
     throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "다시 로그인해 주세요.");

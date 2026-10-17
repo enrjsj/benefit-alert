@@ -1,4 +1,4 @@
-import { PlanningImportPanel } from "./PlanningImportPanel";
+import { PlanningImportPanel, type ImportDraft } from "./PlanningImportPanel";
 import { exportPlanning, matchesPlanningSearch } from "./planningExport";
 import { ApplicationRecordEditor } from "./ApplicationRecordEditor";
 import { useBenefitLookup } from "./useBenefitLookup";
@@ -8,7 +8,8 @@ import { checklistSteps, trackedIds, applicationStatuses } from "./planning";
 import { deadlineDays, deadlineLabel, matchesDeadline, seoulToday, type DeadlineFilter } from "./deadline";
 import { DeadlineCalendarButton } from "./DeadlineCalendarButton";
 
-export function PreparationDialog({ planning, onClose, onDetail }: {
+export function PreparationDialog({ planning, onClose, onDetail, importDraft, onImportDraftChange }: {
+  importDraft: ImportDraft | null; onImportDraftChange: (draft: ImportDraft | null) => void;
   planning: PlanningState; onClose: () => void; onDetail: (id: string) => void;
 }) {
   const [availability, setAvailability] = useState("all");
@@ -17,7 +18,9 @@ export function PreparationDialog({ planning, onClose, onDetail }: {
   const [editing, setEditing] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const mayLeave = () => !dirty || window.confirm("저장하지 않은 신청 기록을 버릴까요?");
-  const close = () => { if (mayLeave()) onClose(); };
+  const [importPending, setImportPending] = useState(false);
+  const mayClose = () => !importPending && mayLeave() && (!importDraft || window.confirm("가져오기 미리보기를 보관하고 창을 닫을까요? 이 탭에서 다시 열면 선택을 이어갈 수 있어요."));
+  const close = () => { if (mayClose()) onClose(); };
   const dialog = useRef<HTMLDialogElement>(null);
   const [filter, setFilter] = useState("all");
   const [applicationFilter, setApplicationFilter] = useState("all");
@@ -67,7 +70,8 @@ export function PreparationDialog({ planning, onClose, onDetail }: {
       <p className="planning-help">검색 조건과 관계없이 저장된 전체 기록을 내려받아요. JSON에는 비교 목록도 포함돼요. 파일에는 개인 메모가 포함돼요. JSON 파일은 아래 가져오기에서 다시 합칠 수 있어요. 확인하지 못한 공고는 CSV 제목·마감일이 비어 있을 수 있어요.</p>
       {exportMessage && <p role="status">{exportMessage}</p>}
     </section>
-    <PlanningImportPanel planning={planning} items={items} />
+    <PlanningImportPanel planning={planning} items={items} draft={importDraft} onDraftChange={onImportDraftChange} onPendingChange={setImportPending} />
+    {importPending && <p role="status">가져오기 작업이 끝나면 창을 닫을 수 있어요.</p>}
     <label className="preparation-search">신청 기록 검색<input type="search" value={query} maxLength={200} placeholder="공고 제목, 기관, 번호, 내 메모" onChange={event => setQuery(event.target.value)} /></label>
     <div className="preparation-sync">
       <p>{planning.account ? "계정에 저장되어 다른 기기에서도 이어갈 수 있어요." : "이 브라우저에 저장돼요. 로그인 후 이 기기의 기록을 가져올 수 있어요."}</p>
@@ -121,7 +125,7 @@ export function PreparationDialog({ planning, onClose, onDetail }: {
           <progress value={count} max={checklistSteps.length} aria-label={`${benefit?.title || id} 준비 진행률`} />
           <div className="preparation-actions">
             <button className="secondary-button" disabled={!planning.ready || planning.busy} onClick={() => setEditing(id)}>신청 기록 편집</button>
-            {benefit && <button className="primary-button" onClick={() => onDetail(id)}>준비 이어가기</button>}
+            {benefit && <button className="primary-button" onClick={() => { if (mayClose()) onDetail(id); }}>준비 이어가기</button>}
             {benefit && <DeadlineCalendarButton benefit={benefit} today={today} />}
             <button className="text-button" disabled={planning.busy || !planning.ready} onClick={() => {
               if (window.confirm("이 공고의 체크리스트·신청 상태·메모를 모두 삭제할까요?")) planning.removeChecklist(id);

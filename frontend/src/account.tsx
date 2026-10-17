@@ -73,6 +73,7 @@ export function useAccount() {
     [busy, setBusy] = useState(false),
     [ready, setReady] = useState(false),
     [recovery, setRecovery] = useState(false);
+  const [googleEnabled,setGoogleEnabled]=useState<boolean|null>(null);
   const [authNotice, setAuthNotice] = useState("");
   const [profileReady, setProfileReady] = useState(false);
   const [profileBusy, setProfileBusy] = useState(false);
@@ -125,6 +126,10 @@ export function useAccount() {
         const { createClient } = await import("@supabase/supabase-js");
         if (disposed) return;
         auth = createClient(c.supabaseUrl, c.publishableKey);
+        setGoogleEnabled(null);
+        void fetchJsonResponse(`${c.supabaseUrl}/auth/v1/settings`, { signal: abort.signal, headers: { apikey: c.publishableKey } })
+          .then(async response => { if (!response.ok) throw Error(); const settings = await response.json(); if (!disposed) setGoogleEnabled(settings.external?.google === true); })
+          .catch(() => { if (!disposed) setGoogleEnabled(false); });
         subscription = auth.auth.onAuthStateChange((event, s) => {
           if (disposed) return;
           updateSession(s);
@@ -314,6 +319,7 @@ export function useAccount() {
   return {
     client,
     authNotice,
+    googleEnabled,
     session,
     state,
     saved,
@@ -340,11 +346,13 @@ export function useAccount() {
 export type Account = ReturnType<typeof useAccount>;
 export function AccountPanel({
   account: a,
+  onCorrections,
   onClose,
   onApply,
   onOpen,
 }: {
   account: Account;
+  onCorrections: () => void;
   onClose: () => void;
   onApply: (p: Preferences) => void;
   onOpen: (id: string) => void;
@@ -449,6 +457,14 @@ export function AccountPanel({
       ) : null}
       {a.state === "ready" && (!a.session || a.recovery) && (
         <form className="account-form" onSubmit={submit}>
+          {!a.recovery && <div className="account-note">
+            <button type="button" className="secondary-button" disabled={pending||!a.googleEnabled} onClick={async()=>{
+              if(!a.client)return;setPending(true);setMessage('');
+              try {const result=await a.client.auth.signInWithOAuth({provider:'google',options:{redirectTo:location.origin+'/'}});if(result.error)throw result.error;}
+              catch {setMessage('Google 로그인에 연결하지 못했어요. 잠시 후 다시 시도해 주세요.');setPending(false);}
+            }}>Google로 로그인</button>
+            {!a.googleEnabled&&<p>{a.googleEnabled===null?'Google 로그인 연결을 확인하고 있어요…':'Google 로그인을 준비하고 있어요. 이메일 로그인은 사용할 수 있어요.'}</p>}
+          </div>}
           {!a.recovery && (
             <div className="account-tabs">
               {(["login", "signup", "reset"] as const).map((m) => (
@@ -530,6 +546,7 @@ export function AccountPanel({
       )}
       {a.session && !a.recovery && (
         <>
+          <button className="secondary-button" onClick={()=>{if(mayLeave())onCorrections();}}>내 정정 요청과 검토</button>
           <div className="account-user">
             <span>{a.session.user.email}</span>
             <button
