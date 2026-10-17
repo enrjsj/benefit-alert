@@ -756,11 +756,15 @@ test('administrator review keeps reply on conflict and refreshes before saving',
  page.once('dialog',d=>d.accept());await page.getByRole('button',{name:'요청 목록 새로고침'}).click();conflict=false;await page.getByRole('button',{name:'요청 #8 검토',exact:true}).click();await page.getByLabel('검토 상태').selectOption('resolved');await page.getByLabel('요청자에게 보낼 답변').fill('수정 완료');await page.getByRole('button',{name:'검토 결과 저장'}).click();await expect(page.getByText('검토 결과를 저장했어요.')).toBeVisible();expect(saved).toEqual({revision:0,status:'resolved',reply:'수정 완료'});
 });
 
-test('Google login respects provider availability and redirects to the current origin',async({page})=>{
+test('Google login respects disabled provider availability',async({page})=>{
  await authConfig(page);await page.route('https://benefit-test.supabase.co/auth/v1/settings',r=>r.fulfill({json:{external:{google:false}}}));
  await page.goto('/');await page.getByRole('button',{name:'로그인',exact:true}).click();await expect(page.getByRole('button',{name:'Google로 로그인',exact:true})).toBeDisabled();
- await page.route('https://benefit-test.supabase.co/auth/v1/settings',r=>r.fulfill({json:{external:{google:true}}}));let target='';await page.route('https://benefit-test.supabase.co/auth/v1/authorize**',r=>{target=r.request().url();return r.fulfill({contentType:'text/html',body:'OAuth fixture'});});
- await page.reload();await page.getByRole('button',{name:'로그인',exact:true}).click();await page.getByRole('button',{name:'Google로 로그인',exact:true}).click();await expect.poll(()=>target).toContain('provider=google');expect(new URL(target).searchParams.get('redirect_to')).toBe('http://127.0.0.1:5180/');
+ await expect(page.getByText('Google 로그인을 준비하고 있어요.',{exact:false})).toBeVisible();
+});
+
+test('Google login respects enabled provider and redirects to the current origin',async({page})=>{
+ await authConfig(page);await page.route('https://benefit-test.supabase.co/auth/v1/settings',r=>r.fulfill({json:{external:{google:true}}}));let target='';await page.route('https://benefit-test.supabase.co/auth/v1/authorize**',r=>{target=r.request().url();return r.fulfill({contentType:'text/html',body:'OAuth fixture'});});
+ await page.goto('/');await page.getByRole('button',{name:'로그인',exact:true}).click();await expect(page.getByRole('dialog')).toBeVisible();await page.getByRole('button',{name:'Google로 로그인',exact:true}).click();await expect.poll(()=>target).toContain('provider=google');expect(new URL(target).searchParams.get('redirect_to')).toBe('http://127.0.0.1:5180/');
 });
 
 test('correction dialog supports keyboard escape, labels and mobile layout',async({page})=>{
