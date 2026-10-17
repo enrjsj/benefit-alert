@@ -106,3 +106,16 @@
 - 로컬 최종 검증: backend 53개, frontend 단위 57개, Chromium 기존/신규 전체 47개 + 추가 복구 실패 재시도 1개, Python 8개 = 166개 통과. TypeScript/Vite 빌드 통과. 메일 수신이나 실제 Supabase 계정의 통과 건수는 포함하지 않았다.
 
 - 운영 반영: 코드 `4ec926d`, CI `39032644309` 3개 job 성공, Vercel 배포 성공/Render `dep-db9mkr6q1p3s738qovrg` live. 배포 후 API 18개 통과. 직접/경유 모두 Server-Timing 및 요청 ID 확인, 제한된 배포 후 error 로그 0. 모바일 운영 만료 링크/복구 폼/공개 목록 검증(pageerror 0). 실제 인증 메일은 미발송·미검증.
+
+
+## 2026-10-17 정정 요청·관리자·가져오기 복원 묶음
+- 코드 `3cd0fd2`, CI `39034721830` 3개 job 성공. 서버 56 + 프런트 단위 57 + Chromium 53/Firefox 7/WebKit 7 + Python 8 = 총 188건 통과. TypeScript/Vite 빌드 성공.
+- PostgreSQL 17의 V8 마이그레이션, 요청자별 목록 격리, 비관리자 403, 비로그인 API 401/no-store, 접수 중복·동일 clientId 재시도·24시간 한도, 답변 필수·revision 충돌·감사 기록 및 RLS 검증.
+- 인증 서버 응답의 검증된 이메일만 사용하며 user_metadata의 다른 이메일을 무시하는 회귀 검증.
+- 브라우저: 가져오기 닫기 취소/보관/재열기/선택 복원, 잘못된 교체 파일에도 기존 초안 보존, 계정 로그아웃 시 폐기. 정정 접수 실패 후 입력 보존 및 같은 clientId 재시도, 관리자 답변 충돌 후 초안 보존·새로고침·재검토.
+- Google 제공자 활성화 여부에 따른 버튼 상태와 SDK OAuth URL/현재 origin 복귀 주소를 모의 제공자로 검증. 실제 Google 계정 로그인 성공으로 계산하지 않음.
+- 키보드 Escape/대화상자 이름/390px 폭 검사에서 닫기 후 초점 복원 문제를 발견해 수정. 실제 운영 모바일 Chromium에서도 공개 조회·정정 로그인 안내·Escape 초점·Google 비활성 안내 확인, pageerror 0.
+- 로컬 Firefox는 프로필 폴더 접근, WebKit은 실행 라이브러리 제한으로 실행 불가. 해당 두 엔진은 필요한 의존성이 설치된 GitHub Actions Ubuntu 환경에서 각각 7건 통과. 로컬 병행 테스트 산출물 충돌 1건은 별도 재실행 통과로 확인.
+- 실계정 접수/운영자 검토·실제 Google 로그인·메일 수신·실기기 Safari/스크린리더 검증은 미완료. Google 제공자 비활성 상태이며 설정 절차는 `ADMIN_SETUP.md` 참조. 운영 DB 관리 SQL 조회도 연결 도구 권한 부족으로 미실행.
+
+- 운영 최종: Render `dep-db9n3dvbtjjs73cbcdqg` live 및 V8 마이그레이션 성공 로그 확인. Vercel 운영 JS `index-8rTK7u-w.js` 일치. 배포 후 공개 API 18건과 신규 정정 API 익명 차단 3건 통과(401/no-store). 실제 관리자 이메일 값은 환경변수에만 저장.
