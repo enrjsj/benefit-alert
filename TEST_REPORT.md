@@ -104,3 +104,5 @@
 - 인증: 만료 링크의 안전한 안내와 fragment 제거. 실제 SDK를 사용하는 모의 가입/복구/비밀번호 변경 검증 및 전용 계정용 opt-in 두 세션 검사 도구 추가. 도구 자체는 로컬 HTTP 프로토콜 fixture로 로그인 2회, 기록 전파, revision 충돌, 기존 기록 보존 및 임시 기록 정리를 검증.
 - 사용자 확인에 따라 실제 메일함/실계정 인증은 실행하지 않음. 환경 미입력 도구 실행은 `NOT RUN`/종료 코드 2. `AUTH_TESTING.md`에 실제 메일 수신·새 비밀번호 재로그인·기기 간 UI 검증 절차 명시.
 - 로컬 최종 검증: backend 53개, frontend 단위 57개, Chromium 기존/신규 전체 47개 + 추가 복구 실패 재시도 1개, Python 8개 = 166개 통과. TypeScript/Vite 빌드 통과. 메일 수신이나 실제 Supabase 계정의 통과 건수는 포함하지 않았다.
+
+- 운영 반영: 코드 `4ec926d`, CI `39032644309` 3개 job 성공, Vercel 배포 성공/Render `dep-db9mkr6q1p3s738qovrg` live. 배포 후 API 18개 통과. 직접/경유 모두 Server-Timing 및 요청 ID 확인, 제한된 배포 후 error 로그 0. 모바일 운영 만료 링크/복구 폼/공개 목록 검증(pageerror 0). 실제 인증 메일은 미발송·미검증.
