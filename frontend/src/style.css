@@ -2526,3 +2526,11 @@ button:disabled {
 .report-regions button:disabled,.report-periods button:disabled { opacity:.55; cursor:default; }
 .report-periods { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
 @media(max-width:600px) { .report-regions { grid-template-columns:repeat(2,minmax(0,1fr)); } .report-periods { grid-template-columns:1fr; } }
+
+/* Correction review remains usable with narrow viewports and enlarged text. */
+.correction-search { margin-block: 20px; }
+.correction-history { min-width: 0; margin-block: 12px; }
+.correction-history section { margin-top: 10px; padding: 12px; border-left: 3px solid #187d6c; }
+.correction-history ol { padding-left: 20px; }
+.correction-history li { display: block; overflow-wrap: anywhere; }
+.account-form textarea { width: 100%; min-height: 110px; box-sizing: border-box; resize: vertical; font: inherit; padding: 10px; border: 1px solid #ccd9d4; border-radius: 8px; }

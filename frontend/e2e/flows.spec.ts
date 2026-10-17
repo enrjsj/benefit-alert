@@ -769,3 +769,38 @@ test('correction dialog supports keyboard escape, labels and mobile layout',asyn
  await page.setViewportSize({width:390,height:844});expect(await dialog.evaluate(e=>e.scrollWidth<=e.clientWidth)).toBe(true);
  await expect(page.getByLabel('정정 요청 닫기')).toBeFocused();await page.keyboard.press('Escape');await expect(dialog).toHaveCount(0);await expect(opener).toBeFocused();
 });
+
+test('correction search preserves filters across pages and history retries without losing results',async({page})=>{
+ await member(page);let failHistory=true,failMore=true,failList=false;const queries:string[]=[];
+ const row={id:21,benefitId:'a',title:'강남 주거 지원',category:'deadline',message:'마감일 확인',status:'resolved',reply:'정정했습니다',revision:2,createdAt:'2026-10-16T01:00:00Z',updatedAt:'2026-10-17T02:00:00Z'};
+ await page.route('**/api/account/corrections**',r=>{
+  const u=new URL(r.request().url());
+  if(u.pathname.endsWith('/access'))return r.fulfill({json:{enabled:true,admin:false}});
+  if(u.pathname.endsWith('/history')){
+   if(failHistory)return r.fulfill({status:503,json:{}});
+   if(u.searchParams.has('before'))return failMore?r.fulfill({status:503,json:{}}):r.fulfill({json:{items:[{status:'reviewing',reply:'이전 답변',revision:1,createdAt:'2026-10-16T02:00:00Z'}],nextCursor:null}});
+   return r.fulfill({json:{items:[{status:'resolved',reply:'최신 답변',revision:2,createdAt:row.updatedAt}],nextCursor:2}});
+  }
+  queries.push(u.search);if(failList)return r.fulfill({status:503,json:{}});
+  return r.fulfill({json:{items:u.searchParams.has('before')?[{...row,id:20}]:[row],nextCursor:u.searchParams.has('before')?null:21}});
+ });
+ await page.goto('/');await page.getByRole('button',{name:/내 계정/}).click();await page.getByRole('button',{name:'내 정정 요청과 검토',exact:true}).click();
+ await page.getByRole('searchbox',{name:'정정 요청 검색',exact:true}).fill('마감');await page.getByRole('button',{name:'요청 검색',exact:true}).click();await page.getByRole('combobox',{name:'처리 상태',exact:true}).selectOption('resolved');await page.getByRole('button',{name:'요청 더 보기',exact:true}).click();
+ expect(queries.some(q=>new URLSearchParams(q).get('q')==='마감'&&new URLSearchParams(q).get('status')==='resolved'&&new URLSearchParams(q).get('before')==='21')).toBe(true);
+ await page.getByRole('button',{name:'요청 #21 처리 이력 보기'}).click();const history=page.getByRole('region',{name:'요청 #21 처리 이력'});await expect(history.getByRole('alert')).toBeVisible();
+ failHistory=false;await history.getByRole('button',{name:'처리 이력 다시 불러오기'}).click();await expect(history).toContainText('최신 답변');await history.getByRole('button',{name:'이전 처리 이력 더 보기'}).click();await expect(history.getByRole('alert')).toBeVisible();await expect(history).toContainText('최신 답변');
+ failMore=false;await history.getByRole('button',{name:'이전 처리 이력 더 보기'}).click();await expect(history).toContainText('이전 답변');await expect(history.getByRole('listitem')).toHaveCount(2);
+ failList=true;await page.getByRole('button',{name:'요청 목록 새로고침'}).click();await expect(page.getByText('마지막으로 확인한 목록이에요.',{exact:false})).toBeVisible();await expect(page.getByRole('heading',{name:'#21 · 강남 주거 지원',exact:true})).toBeVisible();
+ failList=false;await page.getByRole('button',{name:'요청 목록 새로고침'}).click();await page.getByRole('button',{name:'검색 초기화'}).click();await expect(page.getByRole('searchbox',{name:'정정 요청 검색',exact:true})).toHaveValue('');
+ await page.setViewportSize({width:320,height:700});await page.locator('html').evaluate(el=>el.style.fontSize='200%');expect(await page.getByRole('dialog',{name:'내 정정 요청과 검토',exact:true}).evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
+});
+
+test('correction review moves keyboard focus and search cancellation preserves reply and request draft',async({page})=>{
+ await member(page);const row={id:1,benefitId:'a',title:'강남 주거 지원',category:'other',message:'확인 요청',status:'pending',reply:'',revision:0,createdAt:'2026-10-17T00:00:00Z'};
+ await page.route('**/api/account/corrections**',r=>r.fulfill({json:r.request().url().endsWith('/access')?{enabled:true,admin:true}:{items:[row],nextCursor:null}}));
+ await page.goto('/?benefit=a');await page.getByRole('button',{name:'공고 정보 정정 요청',exact:true}).click();await page.getByLabel('정정 요청 내용').fill('접수 전 초안');
+ await page.getByRole('button',{name:'요청 목록 새로고침'}).click();await expect(page.getByLabel('정정 요청 내용')).toHaveValue('접수 전 초안');
+ await page.getByLabel('검토 범위').selectOption('all');await page.getByRole('button',{name:'요청 #1 검토',exact:true}).click();await expect(page.getByLabel('요청자에게 보낼 답변')).toBeFocused();await page.getByLabel('요청자에게 보낼 답변').fill('작성 중인 답변');
+ await page.getByRole('searchbox',{name:'정정 요청 검색',exact:true}).fill('새 검색');page.once('dialog',d=>d.dismiss());await page.getByRole('button',{name:'요청 검색',exact:true}).click();await expect(page.getByLabel('요청자에게 보낼 답변')).toHaveValue('작성 중인 답변');await expect(page.getByText('검색 조건: 새 검색')).toHaveCount(0);
+ page.once('dialog',d=>d.accept());await page.getByRole('button',{name:'요청 검색',exact:true}).click();await expect(page.getByLabel('요청자에게 보낼 답변')).toHaveCount(0);await expect(page.getByLabel('정정 요청 내용')).toHaveValue('접수 전 초안');
+});

@@ -14,6 +14,7 @@ class CorrectionControllerTest {
   mvc.perform(get("/api/account/corrections?all=true")).andExpect(status().isUnauthorized());
   mvc.perform(post("/api/account/corrections").contentType("application/json").content("{}")).andExpect(status().isUnauthorized());
   mvc.perform(put("/api/account/corrections/1").contentType("application/json").content("{}")).andExpect(status().isUnauthorized());
+  mvc.perform(get("/api/account/corrections/1/history")).andExpect(status().isUnauthorized()).andExpect(header().string("Cache-Control","no-store"));
   verifyNoInteractions(service);
  }
 }

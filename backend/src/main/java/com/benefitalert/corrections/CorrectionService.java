@@ -14,8 +14,10 @@ import org.springframework.web.server.ResponseStatusException;
 public class CorrectionService {
  public record Input(UUID clientId,String benefitId,String category,String message) {}
  public record Update(long revision,String status,String reply) {}
- public record Entry(long id,String benefitId,String title,String category,String message,String status,String reply,long revision,String createdAt) {}
+ public record Entry(long id,String benefitId,String title,String category,String message,String status,String reply,long revision,String createdAt,String updatedAt) {}
  public record Page(List<Entry> items,Long nextCursor) {}
+ public record Review(String status,String reply,long revision,String createdAt) {}
+ public record History(List<Review> items,Long nextCursor) {}
  private final JdbcClient jdbc; private final TransactionTemplate tx; private final Set<UUID> admins; private final Set<String> adminEmails;
  private static final Set<String> CATEGORIES=Set.of("deadline","eligibility","region","link","other"), STATES=Set.of("pending","reviewing","resolved","rejected");
  private static final String SELECT="SELECT c.*,b.title FROM correction_request c JOIN benefit b ON b.id=c.benefit_id ";
@@ -28,7 +30,7 @@ public class CorrectionService {
  private void requireAdmin(com.benefitalert.account.SupabaseIdentity.Principal user){if(!admin(user))throw new ResponseStatusException(HttpStatus.FORBIDDEN);}
  private static void valid(boolean ok){if(!ok)throw new ResponseStatusException(HttpStatus.BAD_REQUEST);}
  private static Entry map(java.sql.ResultSet r,int row) throws java.sql.SQLException {
-  return new Entry(r.getLong("id"),r.getString("benefit_id"),r.getString("title"),r.getString("category"),r.getString("message"),r.getString("status"),r.getString("reply"),r.getLong("revision"),r.getObject("created_at",java.time.OffsetDateTime.class).toString());
+  return new Entry(r.getLong("id"),r.getString("benefit_id"),r.getString("title"),r.getString("category"),r.getString("message"),r.getString("status"),r.getString("reply"),r.getLong("revision"),r.getObject("created_at",java.time.OffsetDateTime.class).toString(),r.getObject("updated_at",java.time.OffsetDateTime.class).toString());
  }
  public Entry create(UUID user,Input input) {
   if(!enabled())throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE);
@@ -47,9 +49,22 @@ public class CorrectionService {
  }
  private Entry get(long id){return jdbc.sql(SELECT+"WHERE c.id=:id").param("id",id).query(CorrectionService::map).single();}
  public Page list(com.benefitalert.account.SupabaseIdentity.Principal user,boolean all,String status,long before) {
-  if(all)requireAdmin(user);valid((status.equals("all")||STATES.contains(status))&&before>=0);
-  var rows=jdbc.sql(SELECT+"WHERE (:all OR c.user_id=:u) AND (:state='all' OR c.status=:state) AND (:before=0 OR c.id<:before) ORDER BY c.id DESC LIMIT 21").param("all",all).param("u",user.id()).param("state",status).param("before",before).query(CorrectionService::map).list();
+  return list(user,all,status,before,"");
+ }
+ public Page list(com.benefitalert.account.SupabaseIdentity.Principal user,boolean all,String status,long before,String query) {
+  if(all)requireAdmin(user);valid((status.equals("all")||STATES.contains(status))&&before>=0&&query!=null&&query.length()<=100);
+  var rows=jdbc.sql(SELECT+"WHERE (:all OR c.user_id=:u) AND (:state='all' OR c.status=:state) AND (:q='' OR strpos(lower(b.title),lower(:q))>0 OR strpos(lower(c.message),lower(:q))>0 OR strpos(lower(c.reply),lower(:q))>0 OR cast(c.id as text)=:q) AND (:before=0 OR c.id<:before) ORDER BY c.id DESC LIMIT 21").param("all",all).param("u",user.id()).param("state",status).param("before",before).param("q",query.trim()).query(CorrectionService::map).list();
   return new Page(rows.stream().limit(20).toList(),rows.size()>20?rows.get(19).id():null);
+ }
+ public History history(com.benefitalert.account.SupabaseIdentity.Principal user,long id,long before) {
+  valid(id>0&&before>=0);
+  // Return the same 404 for missing and inaccessible requests; never reveal another owner's data.
+  boolean visible=jdbc.sql("SELECT count(*) FROM correction_request WHERE id=:id AND (:admin OR user_id=:u)")
+   .param("id",id).param("admin",admin(user)).param("u",user.id()).query(Long.class).single()>0;
+  if(!visible)throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+  var rows=jdbc.sql("SELECT status,reply,revision,created_at FROM correction_review WHERE request_id=:id AND (:before=0 OR revision<:before) ORDER BY revision DESC LIMIT 21")
+   .param("id",id).param("before",before).query((r,n)->new Review(r.getString("status"),r.getString("reply"),r.getLong("revision"),r.getObject("created_at",java.time.OffsetDateTime.class).toString())).list();
+  return new History(rows.stream().limit(20).toList(),rows.size()>20?rows.get(19).revision():null);
  }
  public Entry update(com.benefitalert.account.SupabaseIdentity.Principal user,long id,Update input) {
   requireAdmin(user);valid(input!=null&&input.revision()>=0&&input.status()!=null&&STATES.contains(input.status())&&input.reply()!=null&&input.reply().length()<=1000);

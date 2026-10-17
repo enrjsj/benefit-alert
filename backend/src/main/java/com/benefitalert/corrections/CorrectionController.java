@@ -8,7 +8,8 @@ public class CorrectionController {
  private final SupabaseIdentity identity;private final CorrectionService service;
  public CorrectionController(SupabaseIdentity identity,CorrectionService service){this.identity=identity;this.service=service;}
  @GetMapping("/access") public Map<String,Boolean> access(@RequestHeader(value="Authorization",required=false) String token){var user=identity.requirePrincipal(token);return Map.of("enabled",service.enabled(),"admin",service.admin(user));}
- @GetMapping public CorrectionService.Page list(@RequestHeader(value="Authorization",required=false) String token,@RequestParam(defaultValue="false") boolean all,@RequestParam(defaultValue="all") String status,@RequestParam(defaultValue="0") long before){return service.list(identity.requirePrincipal(token),all,status,before);}
+ @GetMapping public CorrectionService.Page list(@RequestHeader(value="Authorization",required=false) String token,@RequestParam(defaultValue="false") boolean all,@RequestParam(defaultValue="all") String status,@RequestParam(defaultValue="0") long before,@RequestParam(defaultValue="") String q){return service.list(identity.requirePrincipal(token),all,status,before,q);}
+ @GetMapping("/{id}/history") public CorrectionService.History history(@RequestHeader(value="Authorization",required=false) String token,@PathVariable long id,@RequestParam(defaultValue="0") long before){return service.history(identity.requirePrincipal(token),id,before);}
  @PostMapping public CorrectionService.Entry create(@RequestHeader(value="Authorization",required=false) String token,@RequestBody CorrectionService.Input input){return service.create(identity.requireUser(token),input);}
  @PutMapping("/{id}") public CorrectionService.Entry update(@RequestHeader(value="Authorization",required=false) String token,@PathVariable long id,@RequestBody CorrectionService.Update input){return service.update(identity.requirePrincipal(token),id,input);}
 }

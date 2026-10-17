@@ -40,4 +40,36 @@ class CorrectionTest {
    assertEquals(429,assertThrows(ResponseStatusException.class,()->service.create(user,new CorrectionService.Input(UUID.randomUUID(),"missing","other","초과"))).getStatusCode().value());
   }
  }
+ @Test void searchAndHistoryAreScopedLiteralAndPaginated() {
+  try(var db=new TestDatabase()) {
+   var owner=new Principal(UUID.randomUUID(),"");var other=new Principal(UUID.randomUUID(),"");var admin=new Principal(UUID.randomUUID(),"");
+   db.seed("history-benefit","서울","주거",3);
+   var service=new CorrectionService(db.jdbc,new DataSourceTransactionManager(db.dataSource),admin.id().toString(),"");
+   var entry=service.create(owner.id(),new CorrectionService.Input(UUID.randomUUID(),"history-benefit","other","100%_확인 요청"));
+   assertEquals(1,service.list(owner,false,"all",0,"%_").items().size());
+   assertTrue(service.list(other,false,"all",0,"%_").items().isEmpty());
+   assertTrue(service.list(owner,false,"all",0,"' OR 1=1 --").items().isEmpty());
+   assertEquals(400,assertThrows(ResponseStatusException.class,()->service.list(owner,false,"all",0,"a".repeat(101))).getStatusCode().value());
+   assertTrue(service.history(owner,entry.id(),0).items().isEmpty());
+   for(int i=0;i<23;i++)service.update(admin,entry.id(),new CorrectionService.Update(i,"reviewing","검토 답변 "+i));
+   assertEquals(1,service.list(owner,false,"reviewing",0,"답변 22").items().size());
+   var first=service.history(owner,entry.id(),0);assertEquals(20,first.items().size());assertEquals(23,first.items().get(0).revision());
+   var last=service.history(admin,entry.id(),first.nextCursor());assertEquals(3,last.items().size());assertEquals(1,last.items().get(2).revision());assertNull(last.nextCursor());
+   assertEquals(404,assertThrows(ResponseStatusException.class,()->service.history(other,entry.id(),0)).getStatusCode().value());
+   assertEquals(404,assertThrows(ResponseStatusException.class,()->service.history(owner,999999,0)).getStatusCode().value());
+   assertEquals(400,assertThrows(ResponseStatusException.class,()->service.history(owner,entry.id(),-1)).getStatusCode().value());
+  }
+ }
+ @Test void queueSearchPaginationNeverSkipsOrRepeatsMatches() {
+  try(var db=new TestDatabase()) {
+   var admin=new Principal(UUID.randomUUID(),"");db.seed("queue","서울","주거",3);
+   var service=new CorrectionService(db.jdbc,new DataSourceTransactionManager(db.dataSource),admin.id().toString(),"");
+   for(int i=0;i<23;i++)service.create(UUID.randomUUID(),new CorrectionService.Input(UUID.randomUUID(),"queue","other","검색 대상 "+i));
+   service.create(UUID.randomUUID(),new CorrectionService.Input(UUID.randomUUID(),"queue","other","제외"));
+   var first=service.list(admin,true,"pending",0,"검색 대상");assertEquals(20,first.items().size());assertNotNull(first.nextCursor());
+   var second=service.list(admin,true,"pending",first.nextCursor(),"검색 대상");assertEquals(3,second.items().size());assertNull(second.nextCursor());
+   var ids=new java.util.HashSet<Long>();first.items().forEach(e->ids.add(e.id()));second.items().forEach(e->assertTrue(ids.add(e.id())));
+   assertTrue(service.list(admin,false,"pending",0,"검색 대상").items().isEmpty());
+  }
+ }
 }
